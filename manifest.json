@@ -1,0 +1,10 @@
+{
+	"id": "saive",
+	"name": "Saive",
+	"version": "0.0.1",
+	"minAppVersion": "1.11.4",
+	"description": "Sync your Saive library into your vault as Markdown notes. Requires a Saive account.",
+	"author": "Saive",
+	"authorUrl": "https://saive.my",
+	"isDesktopOnly": false
+}
