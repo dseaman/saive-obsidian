@@ -18,7 +18,7 @@ Saive saves the articles, videos, recipes and papers you find on the web as Mark
 
 Obsidian's developer policies ask every plugin to state these in plain view.
 
-- **Account required.** You need a Saive account. Saive is in beta; [join the waitlist](https://saive.my/?utm_source=obsidian-plugin) to get one.
+- **Account required.** You need a Saive account, which you can get free at [Saive.my](https://saive.my). 
 - **Network use.** The plugin talks to one host, `app.saive.my`, over HTTPS. It sends a read-only access token and a sync cursor, and it receives your saves as Markdown. When you connect, your browser opens a Saive page that shows the name of your vault so you can recognise the request. Nothing else leaves your vault.
 - **Read-only access.** The token the plugin holds can read your library, private saves included. It cannot add, change or delete anything in Saive. You can revoke it under Settings in Saive. The plugin keeps the token in Obsidian's secret storage, never in `data.json`, so a vault you publish or sync does not carry it.
 - **Server-side records.** Saive's server records the time of each sync and the plugin version that asked, to count active installs and to debug sync problems. The plugin itself collects no analytics and contains no tracking code. See the [privacy policy](https://saive.my/privacy).
@@ -49,7 +49,7 @@ To try a build, copy `main.js` and `manifest.json` into `<vault>/.obsidian/plugi
 
 ## Support
 
-Open an [issue](https://github.com/dseaman/saive-obsidian/issues) or write to hello@saive.my.
+Open an [issue](https://github.com/dseaman/saive-obsidian/issues) or write to dan.seaman@gmail.com.
 
 ## License
 
