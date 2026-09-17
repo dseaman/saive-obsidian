@@ -1,0 +1,15 @@
+# npm
+node_modules
+
+# Build output. main.js ships as a GitHub release asset, never from the repo.
+main.js
+*.map
+
+# Obsidian writes plugin settings here when the repo sits inside a vault.
+data.json
+
+# Editors and OS
+.vscode
+.idea
+*.iml
+.DS_Store

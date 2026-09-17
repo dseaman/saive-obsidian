@@ -1,0 +1,62 @@
+{
+  "contract": "obsidian-sync",
+  "version": 1,
+  "notes": [
+    "Frozen wire contract between app.saive.my (/api/sync/*) and the saive-obsidian plugin.",
+    "Both repos hold a copy of this file and assert against it. Change it here first, bump version, then copy it to the plugin repo.",
+    "seq and cursor values are decimal strings: change_seq is a Postgres bigint.",
+    "markdown is byte-identical to the vault object. Clients write it as-is.",
+    "Every entry on a page carries its seq: files, deleted, missing, oversize. nextCursor is at or above every seq on the page, so missing and oversize entries advance the cursor too.",
+    "missing: the index row exists and the vault object does not. The client skips it. oversize: the save exceeds the page byte budget. The client fetches it from /api/sync/file/[uuid].",
+    "folder is null for an unfiled save. Clients place it in the root folder."
+  ],
+  "tokenHashVector": {
+    "secret": "sv_obs_test_vector_do_not_use_as_a_real_token",
+    "sha256Hex": "30bf2da107a73b8a60d9ed181cd81486f28df45b63aa75c0f29f9f687d18ca85"
+  },
+  "linkCodeVector": {
+    "sha256Hex": "30bf2da107a73b8a60d9ed181cd81486f28df45b63aa75c0f29f9f687d18ca85",
+    "code": "62ZJV8"
+  },
+  "pullResponse": {
+    "files": [
+      {
+        "uuid": "3a4b5c6d-7e8f-4a1b-9c2d-1e2f3a4b5c6d",
+        "seq": "1042",
+        "folder": "Recipes",
+        "title": "Example save",
+        "markdown": "---\ntitle: Example save\nurl: https://example.com/a\nstatus: unread\nuuid: 3a4b5c6d-7e8f-4a1b-9c2d-1e2f3a4b5c6d\ncreated: 2026-09-01T10:00:00Z\nmodified: 2026-09-02T11:30:00Z\nsaive_schema: 1\nsaive_kind: article\n---\n\n# Example save\r\n\nBody with ==a highlight== and an emoji 📚.  \n\n## Notes\n\nMine.\n"
+      },
+      {
+        "uuid": "7e8f9a1b-2c3d-4e5f-8789-0abcdef12345",
+        "seq": "1043",
+        "folder": null,
+        "title": "Unfiled save",
+        "markdown": "---\ntitle: Unfiled save\nurl: https://example.com/b\nstatus: read\nuuid: 7e8f9a1b-2c3d-4e5f-8789-0abcdef12345\ncreated: 2026-09-03T08:00:00Z\nmodified: 2026-09-03T08:01:12Z\nsaive_schema: 1\nsaive_kind: article\n---\n\nBody.\n"
+      }
+    ],
+    "deleted": [
+      { "uuid": "c9d8e7f6-1234-4a1b-9c2d-1e2f3a4b5c6d", "seq": "1044" }
+    ],
+    "missing": [
+      { "uuid": "0f1e2d3c-4b5a-4978-8695-a4b3c2d1e0f9", "seq": "1045" }
+    ],
+    "oversize": [
+      { "uuid": "11111111-2222-4333-8444-555555555555", "seq": "1046" }
+    ],
+    "nextCursor": "1046",
+    "hasMore": false,
+    "reset": false,
+    "serverTime": "2026-09-17T19:00:00.000Z"
+  },
+  "manifestResponse": {
+    "saves": [
+      ["3a4b5c6d-7e8f-4a1b-9c2d-1e2f3a4b5c6d", "1042"],
+      ["7e8f9a1b-2c3d-4e5f-8789-0abcdef12345", "1043"],
+      ["0f1e2d3c-4b5a-4978-8695-a4b3c2d1e0f9", "1045"],
+      ["11111111-2222-4333-8444-555555555555", "1046"]
+    ],
+    "cursor": "1046",
+    "serverTime": "2026-09-17T19:00:00.000Z"
+  }
+}
