@@ -17,7 +17,8 @@ The Saive server lives in a separate private monorepo (`dseaman/saive`, checked 
 ## Layout
 
 - `src/main.ts`: plugin entry. Obsidian imports stay at the edge: sync logic goes in pure modules that vitest can run without Obsidian.
-- `src/*.test.ts`: vitest, node environment.
+- `src/core/`: the pure sync core. `contract.ts` (types and guards for the wire contract, `compareSeq`), `filename.ts` (`sanitizeTitle`, `buildPath`), `hash.ts` (`fullHash`, `bodyHash`, `sha256Hex`), `link-code.ts` (the check-code port), `plan.ts` (`planPage`: one page of changes in, actions and the next state out). Nothing in this directory imports `obsidian`.
+- `src/**/*.test.ts`: vitest, node environment.
 - `contracts/`: the frozen wire contract.
 - `scripts/check-reproducible.mjs`: builds twice and compares hashes.
 - `.github/workflows/ci.yml`: lint, build, test, reproducibility on every PR.
