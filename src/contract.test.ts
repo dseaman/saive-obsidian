@@ -16,7 +16,10 @@ interface ContractFixture {
 	version: number;
 	tokenHashVector: { secret: string; sha256Hex: string };
 	linkCodeVector: { sha256Hex: string; code: string };
-	pullResponse: { files: { folder: string | null; markdown: string }[] };
+	pullResponse: {
+		files: { folder: string | null; markdown: string }[];
+		oversize: { uuid: string; seq: string; folder?: string | null; title?: string }[];
+	};
 }
 
 const fixture = JSON.parse(
@@ -29,9 +32,9 @@ const fixture = JSON.parse(
 ) as ContractFixture;
 
 describe('sync contract fixture', () => {
-	it('is version 1 of the obsidian-sync contract', () => {
+	it('is version 1.1 of the obsidian-sync contract', () => {
 		expect(fixture.contract).toBe('obsidian-sync');
-		expect(fixture.version).toBe(1);
+		expect(fixture.version).toBe(1.1);
 	});
 
 	it('token hash vector is a true sha256', () => {
@@ -51,5 +54,18 @@ describe('sync contract fixture', () => {
 		const files = fixture.pullResponse.files;
 		expect(files.some((f) => f.folder === null)).toBe(true);
 		expect(files.some((f) => f.markdown.includes('\r\n'))).toBe(true);
+	});
+
+	// What 1.1 added. /api/sync/file returns bare markdown with no folder and
+	// no title, so an oversize save the vault has never seen has nowhere to go
+	// unless the pull page names its place. Every sample entry carries both.
+	it('sample oversize entries carry the folder and title a new save needs', () => {
+		const oversize = fixture.pullResponse.oversize;
+		expect(oversize.length).toBeGreaterThan(0);
+		for (const entry of oversize) {
+			expect(entry.folder === null || typeof entry.folder === 'string').toBe(true);
+			expect(typeof entry.title).toBe('string');
+			expect(entry.title).not.toBe('');
+		}
 	});
 });
