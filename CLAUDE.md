@@ -16,8 +16,9 @@ The Saive server lives in a separate private monorepo (`dseaman/saive`, checked 
 
 ## Layout
 
-- `src/main.ts`: plugin entry. Obsidian imports stay at the edge: sync logic goes in pure modules that vitest can run without Obsidian.
-- `src/core/`: the pure sync core. `contract.ts` (types and guards for the wire contract, `compareSeq`), `filename.ts` (`sanitizeTitle`, `buildPath`), `hash.ts` (`fullHash`, `bodyHash`, `sha256Hex`), `link-code.ts` (the check-code port), `plan.ts` (`planPage`: one page of changes in, actions and the next state out). Nothing in this directory imports `obsidian`.
+- `src/main.ts`: plugin entry. Obsidian imports stay at the edge: sync logic goes in pure modules that vitest can run without Obsidian. `src/settings.ts` holds the settings shape and defaults.
+- `src/core/`: the pure sync core. `contract.ts` (types and guards for the wire contract, `compareSeq`), `filename.ts` (`sanitizeTitle`, `buildPath`), `hash.ts` (`fullHash`, `bodyHash`, `sha256Hex`), `frontmatter.ts` (one scalar field out of a frontmatter block), `link-code.ts` (the check-code port), `plan.ts` (`planPage`: one page of changes in, actions and the next state out), `ports.ts` (`VaultPort`, `HttpPort`, `StatePort`), `client.ts` (`SyncClient` over `HttpPort`, typed errors), `engine.ts` (`SyncEngine`: page loop, reconcile, mass-trash guard, single flight). Nothing in this directory imports `obsidian`; `purity.test.ts` enforces that and scans all of `src/` for mutating HTTP methods and `fetch`.
+- `src/obsidian/`: the thin adapters that implement the ports over the Obsidian API (`vault-adapter.ts`, `http-adapter.ts`, `state-adapter.ts`) and the mass-trash modal. No sync logic here.
 - `src/**/*.test.ts`: vitest, node environment.
 - `contracts/`: the frozen wire contract.
 - `scripts/check-reproducible.mjs`: builds twice and compares hashes.

@@ -21,11 +21,23 @@ export interface SeqRef {
 	seq: string;
 }
 
+/**
+ * An oversize entry names a save the client fetches from /api/sync/file.
+ * That route returns bare markdown, so a server that also sends `folder`
+ * and `title` here lets the plugin place a new oversize save correctly.
+ * v1 of the contract sends neither; the guard passes them through when
+ * they are present and well typed.
+ */
+export interface OversizeRef extends SeqRef {
+	folder?: string | null;
+	title?: string;
+}
+
 export interface PullResponse {
 	files: PullFile[];
 	deleted: SeqRef[];
 	missing: SeqRef[];
-	oversize: SeqRef[];
+	oversize: OversizeRef[];
 	nextCursor: string;
 	hasMore: boolean;
 	reset: boolean;
@@ -119,6 +131,24 @@ function seqRefs(value: unknown, field: string): SeqRef[] {
 	});
 }
 
+function oversizeRefs(value: unknown, field: string): OversizeRef[] {
+	return list(value, field).map((item, i) => {
+		const row = record(item, `${field}[${i}]`);
+		const ref: OversizeRef = {
+			uuid: uuid(row.uuid, `${field}[${i}].uuid`),
+			seq: seq(row.seq, `${field}[${i}].seq`),
+		};
+		if (row.folder !== undefined) {
+			if (row.folder !== null && typeof row.folder !== 'string') {
+				throw new ContractError(`${field}[${i}].folder`, 'must be a string or null');
+			}
+			ref.folder = row.folder;
+		}
+		if (row.title !== undefined) ref.title = str(row.title, `${field}[${i}].title`);
+		return ref;
+	});
+}
+
 function pullFile(value: unknown, field: string): PullFile {
 	const row = record(value, field);
 	const folder = row.folder;
@@ -140,7 +170,7 @@ export function parsePullResponse(value: unknown): PullResponse {
 		files: list(row.files, 'files').map((f, i) => pullFile(f, `files[${i}]`)),
 		deleted: seqRefs(row.deleted, 'deleted'),
 		missing: seqRefs(row.missing, 'missing'),
-		oversize: seqRefs(row.oversize, 'oversize'),
+		oversize: oversizeRefs(row.oversize, 'oversize'),
 		nextCursor: seq(row.nextCursor, 'nextCursor'),
 		hasMore: bool(row.hasMore, 'hasMore'),
 		reset: bool(row.reset, 'reset'),

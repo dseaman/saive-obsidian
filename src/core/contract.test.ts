@@ -127,6 +127,31 @@ describe('parsePullResponse', () => {
 		expect(fieldOf(() => parsePullResponse(page))).toBe('missing');
 	});
 
+	it('passes folder and title through on an oversize entry when present', () => {
+		const bare = parsePullResponse(clone(fixture.pullResponse));
+		expect(bare.oversize[0]).toEqual({
+			uuid: '11111111-2222-4333-8444-555555555555',
+			seq: '1046',
+		});
+		const page = clone(fixture.pullResponse) as Loose;
+		Object.assign((page.oversize as Loose[])[0]!, { folder: 'Big', title: 'Large save' });
+		expect(parsePullResponse(page).oversize[0]).toEqual({
+			uuid: '11111111-2222-4333-8444-555555555555',
+			seq: '1046',
+			folder: 'Big',
+			title: 'Large save',
+		});
+		const unfiled = clone(fixture.pullResponse) as Loose;
+		Object.assign((unfiled.oversize as Loose[])[0]!, { folder: null });
+		expect(parsePullResponse(unfiled).oversize[0]?.folder).toBeNull();
+		const badFolder = clone(fixture.pullResponse) as Loose;
+		Object.assign((badFolder.oversize as Loose[])[0]!, { folder: 3 });
+		expect(fieldOf(() => parsePullResponse(badFolder))).toBe('oversize[0].folder');
+		const badTitle = clone(fixture.pullResponse) as Loose;
+		Object.assign((badTitle.oversize as Loose[])[0]!, { title: ['x'] });
+		expect(fieldOf(() => parsePullResponse(badTitle))).toBe('oversize[0].title');
+	});
+
 	it('requires hasMore and reset to be booleans', () => {
 		const a = clone(fixture.pullResponse) as Loose;
 		a.hasMore = 'false';
