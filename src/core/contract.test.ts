@@ -128,8 +128,20 @@ describe('parsePullResponse', () => {
 	});
 
 	it('passes folder and title through on an oversize entry when present', () => {
-		const bare = parsePullResponse(clone(fixture.pullResponse));
-		expect(bare.oversize[0]).toEqual({
+		// The v1.1 fixture carries both; a v1.0 server sends neither, and the
+		// guard has to keep accepting that page rather than name a field the
+		// old server never promised.
+		expect(parsePullResponse(clone(fixture.pullResponse)).oversize[0]).toEqual({
+			uuid: '11111111-2222-4333-8444-555555555555',
+			seq: '1046',
+			folder: 'Longform',
+			title: 'A four megabyte save',
+		});
+		const bare = clone(fixture.pullResponse) as Loose;
+		const bareEntry = (bare.oversize as Loose[])[0]!;
+		delete bareEntry.folder;
+		delete bareEntry.title;
+		expect(parsePullResponse(bare).oversize[0]).toEqual({
 			uuid: '11111111-2222-4333-8444-555555555555',
 			seq: '1046',
 		});
