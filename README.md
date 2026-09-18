@@ -1,12 +1,12 @@
-# Saive for Obsidian
+# Saive Sync for Obsidian
 
-Sync your [Saive](https://saive.my/?utm_source=obsidian-plugin) library into your Obsidian vault.
+Sync your [Saive](https://saive.my/?utm_source=obsidian-plugin) library into your Obsidian vault. Built and maintained by Dan Seaman.
 
 Saive saves the articles, videos, recipes and papers you find on the web as Markdown files, with a summary, tags and your highlights. This plugin copies those files into a folder in your vault and keeps them current, so your saves show up in search, backlinks and the graph next to your own notes.
 
 > **Status: pre-release.** Version 0.0.1 proves the build and release pipeline and does nothing else. Sync and the account link are on `main` and ship in the next release. The plugin is absent from the community directory until then.
 
-## How it works
+## How syncing works
 
 - **Connect once.** Choose **Connect account** in the plugin's settings. The plugin generates a secret token, keeps it in Obsidian's secret storage, and opens a Saive page in your browser that carries a hash of the token and your vault's name. Obsidian and the page both show a six-character code derived from that hash; approve on the page when the two match. The page never sees the token and the plugin never sees your password.
 - **One way, Saive to Obsidian.** The plugin reads your library and writes notes into a folder you choose (default `Saive/`). It never sends your notes, your edits or any other vault content to Saive.
@@ -50,7 +50,7 @@ To try a build, copy `main.js`, `manifest.json` and `styles.css` into `<vault>/.
 
 ## Support
 
-Open an [issue](https://github.com/dseaman/saive-obsidian/issues) or write to dan.seaman@gmail.com.
+This README is the plugin's documentation, and **How syncing works** above is what the settings tab links to. Open an [issue](https://github.com/dseaman/saive-obsidian/issues) or write to dan.seaman@gmail.com.
 
 ## License
 

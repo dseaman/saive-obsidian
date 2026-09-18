@@ -1,10 +1,10 @@
 {
 	"id": "saive",
-	"name": "Saive",
+	"name": "Saive Sync",
 	"version": "0.0.1",
 	"minAppVersion": "1.11.4",
 	"description": "Sync your Saive library into your vault as Markdown notes. Requires a Saive account.",
-	"author": "Saive",
-	"authorUrl": "https://saive.my",
+	"author": "Dan Seaman",
+	"authorUrl": "https://github.com/dseaman/saive-obsidian",
 	"isDesktopOnly": false
 }
