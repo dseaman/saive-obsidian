@@ -15,7 +15,7 @@ import { linkCode } from './link-code';
 
 export const BASE_URL = 'https://app.saive.my';
 export const SIGNUP_URL = 'https://saive.my/?utm_source=obsidian-plugin';
-export const DOCS_URL = 'https://saive.my/docs/obsidian?utm_source=obsidian-plugin';
+export const DOCS_URL = 'https://github.com/dseaman/saive-obsidian#how-syncing-works';
 export const PRIVACY_URL = 'https://saive.my/privacy';
 /** The app.secretStorage id that holds the sync token. Never a data.json key. */
 export const SECRET_KEY = 'saive-sync-token';

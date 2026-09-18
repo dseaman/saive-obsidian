@@ -92,10 +92,10 @@ describe('startLink', () => {
 });
 
 describe('constants', () => {
-	it('point at the production host and the tagged marketing pages', () => {
+	it('point at the production host, the tagged signup link and the README', () => {
 		expect(BASE_URL).toBe('https://app.saive.my');
 		expect(SIGNUP_URL).toBe('https://saive.my/?utm_source=obsidian-plugin');
-		expect(DOCS_URL).toBe('https://saive.my/docs/obsidian?utm_source=obsidian-plugin');
+		expect(DOCS_URL).toBe('https://github.com/dseaman/saive-obsidian#how-syncing-works');
 		expect(SECRET_KEY).toBe('saive-sync-token');
 	});
 });
