@@ -60,6 +60,9 @@ export function compareSeq(a: string, b: string): number {
 }
 
 const SEQ = /^(?:0|[1-9][0-9]*)$/;
+// Canonical lowercase form. A uuid becomes part of a vault path when a title
+// sanitizes to nothing or collides, so nothing but hex and hyphens may pass.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -87,6 +90,12 @@ function seq(value: unknown, field: string): string {
 	return s;
 }
 
+function uuid(value: unknown, field: string): string {
+	const s = str(value, field);
+	if (!UUID.test(s)) throw new ContractError(field, 'must be a lowercase canonical uuid');
+	return s;
+}
+
 function bool(value: unknown, field: string): boolean {
 	if (typeof value !== 'boolean') throw new ContractError(field, 'must be a boolean');
 	return value;
@@ -104,7 +113,7 @@ function seqRefs(value: unknown, field: string): SeqRef[] {
 	return list(value, field).map((item, i) => {
 		const row = record(item, `${field}[${i}]`);
 		return {
-			uuid: str(row.uuid, `${field}[${i}].uuid`),
+			uuid: uuid(row.uuid, `${field}[${i}].uuid`),
 			seq: seq(row.seq, `${field}[${i}].seq`),
 		};
 	});
@@ -117,7 +126,7 @@ function pullFile(value: unknown, field: string): PullFile {
 		throw new ContractError(`${field}.folder`, 'must be a string or null');
 	}
 	return {
-		uuid: str(row.uuid, `${field}.uuid`),
+		uuid: uuid(row.uuid, `${field}.uuid`),
 		seq: seq(row.seq, `${field}.seq`),
 		folder,
 		title: str(row.title, `${field}.title`),
@@ -156,7 +165,7 @@ export function parseManifestResponse(value: unknown): ManifestResponse {
 		if (!Array.isArray(item) || item.length !== 2) {
 			throw new ContractError(`saves[${i}]`, 'must be a [uuid, seq] pair');
 		}
-		return [str(item[0], `saves[${i}][0]`), seq(item[1], `saves[${i}][1]`)];
+		return [uuid(item[0], `saves[${i}][0]`), seq(item[1], `saves[${i}][1]`)];
 	});
 	return {
 		saves,

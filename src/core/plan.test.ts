@@ -202,6 +202,18 @@ describe('local edits', () => {
 		);
 	});
 
+	it('names the conflict copy by the UTC date of an offset-bearing serverTime', async () => {
+		const s = state({ [U1]: await tracked(MD1) });
+		const { actions } = await run(
+			s,
+			page({ files: [entry({ markdown: remoteEdit(MD1) })], serverTime: '2026-09-17T23:30:00-05:00' }),
+			{ [U1]: [await onDisk(P1, bodyEdit(MD1))] },
+		);
+		expect(only(actions, 'conflict').copyPath).toBe(
+			'Saive/_conflicts/Example save (conflict 2026-09-18).md',
+		);
+	});
+
 	it('keeps the conflict copy stem within 120 code points', async () => {
 		const long = 'x'.repeat(200);
 		const longPath = `Saive/Recipes/${'x'.repeat(120)}.md`;
@@ -288,6 +300,31 @@ describe('user moves and remote renames', () => {
 			{ [U1]: [await onDisk(P1, MD1)] },
 		);
 		expect(only(actions, 'rename').to).toBe('Saive/Recipes/Example Save.md');
+	});
+
+	it('does not rename when macOS hands back an NFD form of the NFC path it wrote', async () => {
+		const nfcTitle = `Caf${String.fromCharCode(0xe9)}`;
+		const nfcPath = `Saive/Recipes/${nfcTitle}.md`;
+		const nfdPath = `Saive/Recipes/Cafe${String.fromCharCode(0x301)}.md`;
+		const s = state({ [U1]: await tracked(MD1, { path: nfcPath }) });
+		const local = { [U1]: [await onDisk(nfdPath, MD1)] };
+
+		const first = await run(s, page({ files: [entry({ title: nfcTitle })] }), local);
+		expect(first.actions).toEqual([{ kind: 'skip', uuid: U1, reason: 'unchanged' }]);
+		// The adapter's own bytes are stored: those are what it can open.
+		expect(first.state.files[U1]?.path).toBe(nfdPath);
+
+		// And the next sync, with the NFD path now recorded, stays quiet too.
+		const second = await run(first.state, page({ files: [entry({ title: nfcTitle, seq: '1200' })] }), local);
+		expect(second.actions).toEqual([{ kind: 'skip', uuid: U1, reason: 'unchanged' }]);
+
+		// A real title change still renames, from the adapter's path, whether
+		// the recorded path is the NFC one or the NFD one.
+		const renamed = { kind: 'rename', uuid: U1, from: nfdPath, to: 'Saive/Recipes/Renamed.md' };
+		const fromNfc = await run(s, page({ files: [entry({ title: 'Renamed' })] }), local);
+		expect(fromNfc.actions).toEqual([renamed]);
+		const fromNfd = await run(first.state, page({ files: [entry({ title: 'Renamed', seq: '1200' })] }), local);
+		expect(fromNfd.actions).toEqual([renamed]);
 	});
 
 	it('does not rename a file whose recorded path carries a collision suffix', async () => {
@@ -476,6 +513,15 @@ describe('seq ordering', () => {
 		expect(kinds(actions)).toEqual(['write']);
 		expect(only(actions, 'write').markdown).toBe(remote);
 		expect(next.files[U1]?.seq).toBe('30');
+	});
+
+	it('lets a delete win an equal-seq tie with a file entry', async () => {
+		const s = state({ [U1]: await tracked(MD1) });
+		const local = { [U1]: [await onDisk(P1, MD1)] };
+		const p = page({ files: [entry({ seq: '1100' })], deleted: [{ uuid: U1, seq: '1100' }] });
+		const { actions, state: next } = await run(s, p, local);
+		expect(actions).toEqual([{ kind: 'trash', uuid: U1, path: P1 }]);
+		expect(next.files[U1]).toBeUndefined();
 	});
 
 	it('lets an oversize entry outrank an older file entry', async () => {

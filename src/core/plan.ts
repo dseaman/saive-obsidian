@@ -106,6 +106,11 @@ type Entry =
 	| { kind: 'missing'; uuid: string; seq: string }
 	| { kind: 'oversize'; uuid: string; seq: string };
 
+// Two entries with the same seq for one uuid should not happen (change_seq
+// is unique per change). If they do, the delete wins: the higher rank sorts
+// later and the last entry stored per uuid is the one that applies.
+const TIE_RANK: Record<Entry['kind'], number> = { file: 0, missing: 1, oversize: 2, delete: 3 };
+
 function orderedEntries(page: PullResponse): Entry[] {
 	const all: Entry[] = [
 		...page.files.map((file): Entry => ({ kind: 'file', uuid: file.uuid, seq: file.seq, file })),
@@ -113,11 +118,18 @@ function orderedEntries(page: PullResponse): Entry[] {
 		...page.missing.map((m): Entry => ({ kind: 'missing', uuid: m.uuid, seq: m.seq })),
 		...page.oversize.map((o): Entry => ({ kind: 'oversize', uuid: o.uuid, seq: o.seq })),
 	];
-	all.sort((a, b) => compareSeq(a.seq, b.seq));
+	all.sort((a, b) => compareSeq(a.seq, b.seq) || TIE_RANK[a.kind] - TIE_RANK[b.kind]);
 	// Ascending order, so the last entry stored per uuid is its highest seq.
 	const latest = new Map<string, Entry>();
 	for (const entry of all) latest.set(entry.uuid, entry);
 	return [...latest.values()].sort((a, b) => compareSeq(a.seq, b.seq));
+}
+
+// macOS may hand back a decomposed (NFD) name for a file the plugin created
+// with a composed (NFC) one. Paths compare in NFC; the adapter's own bytes
+// are what get stored and acted on, because those are what it can open.
+function samePath(a: string, b: string): boolean {
+	return a.normalize('NFC') === b.normalize('NFC');
 }
 
 // The recorded path wins when a file still sits there; otherwise the
@@ -130,7 +142,7 @@ function resolveLocal(
 	const candidates = local[uuid];
 	if (candidates === undefined || candidates.length === 0) return undefined;
 	if (recorded !== undefined) {
-		const atRecorded = candidates.find((c) => c.path === recorded);
+		const atRecorded = candidates.find((c) => samePath(c.path, recorded));
 		if (atRecorded !== undefined) return atRecorded;
 	}
 	return [...candidates].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))[0];
@@ -163,8 +175,9 @@ export async function planPage(
 	const ignored: Record<string, string> = { ...((state as Partial<SyncState>).ignored ?? {}) };
 	const actions: Action[] = [];
 	const conflictsDir = opts.conflictsDir ?? `${trimSlashes(opts.root)}/_conflicts`;
-	// The UTC date of the ISO serverTime names conflict copies: no local clock.
-	const date = page.serverTime.slice(0, 10);
+	// The UTC date of serverTime names conflict copies: no local clock, and an
+	// offset-bearing timestamp still yields the UTC day.
+	const date = new Date(page.serverTime).toISOString().slice(0, 10);
 
 	// Every path a new file must avoid. Maintained as the plan proceeds so
 	// two actions on one page never target the same path.
@@ -197,6 +210,8 @@ export async function planPage(
 			delete ignored[uuid];
 			if (existing === undefined) continue;
 			delete files[uuid];
+			// With duplicate copies on disk, the resolved copy is the one the
+			// plugin owns; any other copy is the user's to keep, and stays.
 			const found = resolveLocal(uuid, existing.path, local);
 			if (found === undefined) continue;
 			if (found.bodyHash === existing.bodyHash) {
@@ -246,7 +261,7 @@ export async function planPage(
 
 		let path = found.path;
 		let renamed = false;
-		const atRecordedPath = existing !== undefined && found.path === existing.path;
+		const atRecordedPath = existing !== undefined && samePath(found.path, existing.path);
 		if (atRecordedPath && !pathMatches(found.path, opts.root, folder, title, uuid)) {
 			taken.delete(found.path);
 			path = buildPath(opts.root, folder, title, uuid, taken);

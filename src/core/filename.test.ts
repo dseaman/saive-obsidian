@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPath, sanitizeTitle } from './filename';
+import { buildPath, pathMatches, sanitizeTitle, withSuffix } from './filename';
 
 // Filenames must survive three desktop OSes, Obsidian's own link syntax and
 // a case-insensitive disk, and the same title must land at the same path on
@@ -76,22 +76,89 @@ describe('buildPath', () => {
 		expect(buildPath('Saive', '***', 'x', uuid, new Set())).toBe('Saive/x.md');
 	});
 
-	it('suffixes Windows reserved names, with or without an extension', () => {
-		for (const name of ['CON', 'con', 'PRN', 'AUX', 'NUL', 'COM1', 'COM9', 'LPT1', 'lpt9']) {
+	const reservedBases = [
+		'CON', 'PRN', 'AUX', 'NUL',
+		...Array.from({ length: 9 }, (_, i) => `COM${i + 1}`),
+		...Array.from({ length: 9 }, (_, i) => `LPT${i + 1}`),
+	];
+	const reserved = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
+
+	it('tags Windows reserved names before the first dot', () => {
+		for (const name of ['CON', 'con', 'NUL', 'COM1', 'lpt9']) {
 			expect(buildPath('Saive', null, name, uuid, new Set())).toBe(
 				`Saive/${name} (${uuid8}).md`,
 			);
 		}
 		expect(buildPath('Saive', null, 'con.txt', uuid, new Set())).toBe(
-			`Saive/con.txt (${uuid8}).md`,
+			`Saive/con (${uuid8}).txt.md`,
 		);
 		expect(buildPath('Saive', null, 'CONSOLE', uuid, new Set())).toBe(
 			'Saive/CONSOLE.md',
 		);
 		expect(buildPath('Saive', null, 'COM0', uuid, new Set())).toBe('Saive/COM0.md');
-		expect(buildPath('Saive', 'NUL', 'x', uuid, new Set())).toBe(
-			`Saive/NUL (${uuid8})/x.md`,
+	});
+
+	it('leaves no reserved base name in any final basename', () => {
+		for (const base of reservedBases) {
+			for (const title of [base, base.toLowerCase(), `${base}.txt`, `${base}.tar.gz`]) {
+				const path = buildPath('Saive', null, title, uuid, new Set());
+				const basename = path.slice(path.lastIndexOf('/') + 1);
+				const beforeDot = basename.slice(0, basename.indexOf('.'));
+				expect(beforeDot, path).not.toMatch(reserved);
+			}
+		}
+	});
+
+	it('tags a reserved folder name without any uuid, so saves share it', () => {
+		const other = '7e8f9a1b-2c3d-4e5f-8789-0abcdef12345';
+		expect(buildPath('Saive', 'NUL', 'x', uuid, new Set())).toBe('Saive/NUL (folder)/x.md');
+		expect(buildPath('Saive', 'NUL', 'y', other, new Set())).toBe('Saive/NUL (folder)/y.md');
+		expect(buildPath('Saive', 'com1.old', 'x', uuid, new Set())).toBe(
+			'Saive/com1 (folder).old/x.md',
 		);
+	});
+
+	it('never lets a hostile uuid add path segments', () => {
+		const hostile = [
+			'../../x',
+			'..',
+			'a/b/c/d/e/f/g/h',
+			'../../abcdef1234-x/..',
+			'\\..\\x',
+			'. . .',
+			'/',
+			'',
+		];
+		for (const bad of hostile) {
+			for (const title of ['', '???', 'x']) {
+				// Walk every candidate buildPath can produce by marking each one
+				// taken, until it runs out and throws.
+				const taken = new Set<string>();
+				const paths: string[] = [];
+				for (;;) {
+					let path: string;
+					try {
+						path = buildPath('Saive', 'Recipes', title, bad, taken);
+					} catch {
+						break;
+					}
+					paths.push(path);
+					taken.add(path);
+				}
+				expect(paths.length, JSON.stringify(bad)).toBeGreaterThanOrEqual(2);
+				for (const path of paths) {
+					expect(path, `${JSON.stringify(bad)} / ${title}`).not.toContain('..');
+					expect(path.split('/'), path).toHaveLength(3);
+					expect(path.startsWith('Saive/Recipes/')).toBe(true);
+				}
+			}
+		}
+	});
+
+	it('clamps a suffix longer than the cap instead of slicing from the end', () => {
+		const suffix = 's'.repeat(130);
+		expect(withSuffix('abcdef', suffix)).toBe(suffix);
+		expect(withSuffix('abcdef', 'x'.repeat(118))).toBe('ab' + 'x'.repeat(118));
 	});
 
 	it('resolves a case-insensitive collision with the uuid8 suffix', () => {
@@ -135,9 +202,38 @@ describe('buildPath', () => {
 		expect(a).toBe(`Saive/Recipes/Example save (${uuid8}).md`);
 	});
 
+	it('collides across normalization forms', () => {
+		const nfc = `Caf${String.fromCharCode(0xe9)}`;
+		const nfd = `Cafe${String.fromCharCode(0x301)}`;
+		const taken = new Set([`Saive/${nfd}.md`]);
+		expect(buildPath('Saive', null, nfc, uuid, taken)).toBe(`Saive/${nfc} (${uuid8}).md`);
+	});
+
 	it('leaves the caller-supplied set untouched', () => {
 		const taken = new Set(['Saive/x.md']);
 		buildPath('Saive', null, 'x', uuid, taken);
 		expect([...taken]).toEqual(['Saive/x.md']);
+	});
+});
+
+describe('pathMatches', () => {
+	const nfc = `Caf${String.fromCharCode(0xe9)}`;
+	const nfd = `Cafe${String.fromCharCode(0x301)}`;
+
+	it('accepts the plain path and either collision suffix', () => {
+		expect(pathMatches('Saive/Recipes/x.md', 'Saive', 'Recipes', 'x', uuid)).toBe(true);
+		expect(pathMatches(`Saive/Recipes/x (${uuid8}).md`, 'Saive', 'Recipes', 'x', uuid)).toBe(true);
+		expect(pathMatches(`Saive/Recipes/x (${uuid}).md`, 'Saive', 'Recipes', 'x', uuid)).toBe(true);
+	});
+
+	it('rejects a different title, folder or case', () => {
+		expect(pathMatches('Saive/Recipes/X.md', 'Saive', 'Recipes', 'x', uuid)).toBe(false);
+		expect(pathMatches('Saive/x.md', 'Saive', 'Recipes', 'x', uuid)).toBe(false);
+		expect(pathMatches('Saive/Recipes/y.md', 'Saive', 'Recipes', 'x', uuid)).toBe(false);
+	});
+
+	it('treats an NFD path from the adapter as the NFC path it built', () => {
+		expect(pathMatches(`Saive/Recipes/${nfd}.md`, 'Saive', 'Recipes', nfc, uuid)).toBe(true);
+		expect(pathMatches(`Saive/Recipes/${nfd}.md`, 'Saive', 'Recipes', nfd, uuid)).toBe(true);
 	});
 });

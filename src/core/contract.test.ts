@@ -75,6 +75,33 @@ describe('parsePullResponse', () => {
 		}
 	});
 
+	it('rejects any uuid outside the lowercase canonical form', () => {
+		const bad = [
+			'../../x',
+			'..',
+			'3a4b5c6d/7e8f-4a1b-9c2d-1e2f3a4b5c6d',
+			'3A4B5C6D-7E8F-4A1B-9C2D-1E2F3A4B5C6D',
+			'3a4b5c6d-7e8f-4a1b-9c2d-1e2f3a4b5c6',
+			'3a4b5c6d-7e8f-4a1b-9c2d-1e2f3a4b5c6d0',
+			'3a4b5c6d7e8f4a1b9c2d1e2f3a4b5c6d',
+			' 3a4b5c6d-7e8f-4a1b-9c2d-1e2f3a4b5c6d',
+			'',
+		];
+		for (const value of bad) {
+			const page = clone(fixture.pullResponse) as Loose;
+			(page.files as Loose[])[0]!.uuid = value;
+			expect(fieldOf(() => parsePullResponse(page)), value).toBe('files[0].uuid');
+			for (const list of ['deleted', 'missing', 'oversize']) {
+				const p = clone(fixture.pullResponse) as Loose;
+				(p[list] as Loose[])[0]!.uuid = value;
+				expect(fieldOf(() => parsePullResponse(p)), value).toBe(`${list}[0].uuid`);
+			}
+			const m = clone(fixture.manifestResponse) as Loose;
+			(m.saves as unknown[])[0] = [value, '1042'];
+			expect(fieldOf(() => parseManifestResponse(m)), value).toBe('saves[0][0]');
+		}
+	});
+
 	it('requires folder to be a string or null', () => {
 		const page = clone(fixture.pullResponse) as Loose;
 		delete (page.files as Loose[])[1]!.folder;
@@ -143,7 +170,7 @@ describe('parseManifestResponse', () => {
 		(m.saves as unknown[])[2] = ['0f1e2d3c-4b5a-4978-8695-a4b3c2d1e0f9'];
 		expect(fieldOf(() => parseManifestResponse(m))).toBe('saves[2]');
 		const n = clone(fixture.manifestResponse) as Loose;
-		(n.saves as unknown[])[1] = ['x', 1043];
+		(n.saves as unknown[])[1] = ['7e8f9a1b-2c3d-4e5f-8789-0abcdef12345', 1043];
 		expect(fieldOf(() => parseManifestResponse(n))).toBe('saves[1][1]');
 	});
 
