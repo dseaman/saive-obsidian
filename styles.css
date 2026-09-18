@@ -1,0 +1,29 @@
+/* Saive for Obsidian. Ships beside main.js; Obsidian loads it with the plugin. */
+
+/* The six-character check code in the link modal. Selectable and never
+   wrapped: a code broken across lines is a code people stop comparing. */
+.saive-link-code {
+	font-family: var(--font-monospace);
+	font-size: 2em;
+	letter-spacing: 0.22em;
+	white-space: nowrap;
+	user-select: all;
+	-webkit-user-select: all;
+	padding: var(--size-4-3) var(--size-4-4);
+	margin: var(--size-4-3) 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+}
+
+.saive-link-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.saive-sync-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	margin: 0 0 var(--size-4-3);
+}

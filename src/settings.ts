@@ -1,18 +1,17 @@
 // Plugin settings, stored in data.json beside the sync state. The sync
 // token is not here and never will be: it lives in app.secretStorage,
 // because data.json travels with a vault that many people commit to
-// public git.
+// public git. The auto-sync interval is not here either: it is a property
+// of one device (a phone on cellular, a desktop on a wire) and goes
+// through app.saveLocalStorage; autoSyncFrom parses what comes back.
 
 export interface SaiveSettings {
 	/** Vault folder that holds the mirror. */
 	root: string;
-	/** Auto-sync interval in minutes. 0 means manual only. */
-	intervalMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: SaiveSettings = {
 	root: 'Saive',
-	intervalMinutes: 15,
 };
 
 /** The root as the engine sees it: no surrounding whitespace or slashes. */
@@ -25,9 +24,36 @@ export function settingsFrom(raw: unknown): SaiveSettings {
 	// A root of "" or "/" would spread saves over the whole vault.
 	const root =
 		typeof row.root === 'string' && cleanRoot(row.root) !== '' ? cleanRoot(row.root) : DEFAULT_SETTINGS.root;
-	const minutes =
-		typeof row.intervalMinutes === 'number' && Number.isFinite(row.intervalMinutes) && row.intervalMinutes >= 0
-			? row.intervalMinutes
-			: DEFAULT_SETTINGS.intervalMinutes;
-	return { root, intervalMinutes: minutes };
+	return { root };
+}
+
+/** Auto-sync interval in minutes for this device. 0 means manual only. */
+export type AutoSyncMinutes = 0 | 15 | 60;
+
+export const AUTO_SYNC_OPTIONS: readonly AutoSyncMinutes[] = [0, 15, 60];
+export const DEFAULT_AUTO_SYNC: AutoSyncMinutes = 15;
+
+export function autoSyncLabel(minutes: AutoSyncMinutes): string {
+	switch (minutes) {
+		case 0:
+			return 'Off';
+		case 15:
+			return 'Every 15 minutes';
+		case 60:
+			return 'Every hour';
+	}
+}
+
+/**
+ * The stored per-device value, in any shape an earlier build wrote: a
+ * number of minutes, or the boolean on/off flag from before the interval
+ * moved here. Anything else is the default.
+ */
+export function autoSyncFrom(raw: unknown): AutoSyncMinutes {
+	if (raw === false) return 0;
+	if (raw === true) return DEFAULT_AUTO_SYNC;
+	for (const option of AUTO_SYNC_OPTIONS) {
+		if (raw === option || raw === String(option)) return option;
+	}
+	return DEFAULT_AUTO_SYNC;
 }

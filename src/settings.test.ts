@@ -1,22 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { cleanRoot, DEFAULT_SETTINGS, settingsFrom } from './settings';
+import {
+	AUTO_SYNC_OPTIONS,
+	autoSyncFrom,
+	autoSyncLabel,
+	cleanRoot,
+	DEFAULT_AUTO_SYNC,
+	DEFAULT_SETTINGS,
+	settingsFrom,
+} from './settings';
 
 // settingsFrom reads whatever data.json holds. A root that cleans to
 // nothing would put every save at the vault's top level, so it falls back
 // to the default; the engine refuses an empty root on its side too.
+// autoSyncFrom reads the per-device value from localStorage, including the
+// boolean an earlier build wrote there.
 
 describe('settingsFrom', () => {
 	it('returns the defaults for missing or malformed input', () => {
 		expect(settingsFrom(undefined)).toEqual(DEFAULT_SETTINGS);
 		expect(settingsFrom(null)).toEqual(DEFAULT_SETTINGS);
 		expect(settingsFrom('Saive')).toEqual(DEFAULT_SETTINGS);
-		expect(settingsFrom({ root: 7, intervalMinutes: 'soon' })).toEqual(DEFAULT_SETTINGS);
+		expect(settingsFrom({ root: 7 })).toEqual(DEFAULT_SETTINGS);
 	});
 
-	it('keeps a valid root and interval', () => {
+	it('keeps a valid root and drops fields it no longer stores', () => {
 		expect(settingsFrom({ root: 'Library/Saive', intervalMinutes: 0 })).toEqual({
 			root: 'Library/Saive',
-			intervalMinutes: 0,
 		});
 	});
 
@@ -30,9 +39,35 @@ describe('settingsFrom', () => {
 			expect(settingsFrom({ root }).root).toBe(DEFAULT_SETTINGS.root);
 		}
 	});
+});
 
-	it('rejects a negative or non-finite interval', () => {
-		expect(settingsFrom({ intervalMinutes: -1 }).intervalMinutes).toBe(15);
-		expect(settingsFrom({ intervalMinutes: Number.NaN }).intervalMinutes).toBe(15);
+describe('autoSyncFrom', () => {
+	it('defaults to every 15 minutes when nothing is stored', () => {
+		expect(autoSyncFrom(null)).toBe(15);
+		expect(autoSyncFrom(undefined)).toBe(15);
+		expect(DEFAULT_AUTO_SYNC).toBe(15);
+	});
+
+	it('accepts each option as a number or a string', () => {
+		for (const option of AUTO_SYNC_OPTIONS) {
+			expect(autoSyncFrom(option)).toBe(option);
+			expect(autoSyncFrom(String(option))).toBe(option);
+		}
+	});
+
+	it('reads the boolean flag an earlier build stored', () => {
+		expect(autoSyncFrom(false)).toBe(0);
+		expect(autoSyncFrom(true)).toBe(15);
+	});
+
+	it('falls back to the default for anything else', () => {
+		expect(autoSyncFrom(7)).toBe(15);
+		expect(autoSyncFrom(-15)).toBe(15);
+		expect(autoSyncFrom('soon')).toBe(15);
+		expect(autoSyncFrom({})).toBe(15);
+	});
+
+	it('labels every option in sentence case', () => {
+		expect(AUTO_SYNC_OPTIONS.map(autoSyncLabel)).toEqual(['Off', 'Every 15 minutes', 'Every hour']);
 	});
 });
