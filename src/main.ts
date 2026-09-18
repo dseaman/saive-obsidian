@@ -17,6 +17,12 @@ import type { SaiveSettings } from './settings';
 
 const BASE_URL = 'https://app.saive.my';
 const TOKEN_SECRET_ID = 'saive-sync-token';
+/** Longest wait a 429 can ask for before the plugin leaves it to the next sync. */
+const MAX_RETRY_SECONDS = 3600;
+/** Automatic 429 retries per load; the interval or the user takes over after. */
+const MAX_RETRIES = 3;
+/** Quiet-run failures in a row before one notice per load. */
+const FAILURES_BEFORE_NOTICE = 3;
 
 interface RunOptions {
 	full: boolean;
@@ -28,6 +34,10 @@ export default class SaivePlugin extends Plugin {
 	settings: SaiveSettings = DEFAULT_SETTINGS;
 	private engine: SyncEngine | null = null;
 	private warnedUnlinked = false;
+	private warnedFailing = false;
+	private quietFailures = 0;
+	private retries = 0;
+	private retryTimer: number | null = null;
 
 	async onload(): Promise<void> {
 		this.settings = (await loadPluginData(this)).settings;
@@ -68,6 +78,7 @@ export default class SaivePlugin extends Plugin {
 				}, minutes * 60 * 1000),
 			);
 		}
+		this.register(() => this.clearRetry());
 	}
 
 	// Older apps have no secretStorage; the manifest's minAppVersion keeps
@@ -85,10 +96,28 @@ export default class SaivePlugin extends Plugin {
 			report = await this.engine.sync({ full: opts.full });
 		} catch (err) {
 			console.error('[saive] sync failed', err);
-			if (opts.announce) new Notice('Saive sync failed. See the developer console for details.');
+			this.failed(opts);
 			return;
 		}
+		this.quietFailures = 0;
 		this.announce(report, opts);
+	}
+
+	// A user-triggered failure gets a notice every time. A background one
+	// (offline, say) gets one notice per load after three in a row, so an
+	// unreachable server is neither a toast every interval nor a silence.
+	private failed(opts: RunOptions): void {
+		if (opts.announce) {
+			new Notice('Saive sync failed. See the developer console for details.');
+			return;
+		}
+		this.quietFailures += 1;
+		if (this.quietFailures >= FAILURES_BEFORE_NOTICE && !this.warnedFailing) {
+			this.warnedFailing = true;
+			new Notice(
+				`Saive sync has failed ${this.quietFailures} times. Open the developer console for details.`,
+			);
+		}
 	}
 
 	private announce(report: SyncReport, opts: RunOptions): void {
@@ -102,19 +131,22 @@ export default class SaivePlugin extends Plugin {
 				}
 				return;
 			case 'rate-limited': {
-				const seconds = report.retryAfterSeconds ?? 5;
-				this.registerInterval(
-					window.setTimeout(() => {
-						void this.runSync({ full: false, announce: false });
-					}, (seconds + 1) * 1000),
-				);
-				if (opts.announce) new Notice(`Saive asked the plugin to wait ${seconds} seconds. Sync will resume on its own.`);
+				const seconds = Math.min(report.retryAfterSeconds ?? 5, MAX_RETRY_SECONDS);
+				const scheduled = this.scheduleRetry(seconds);
+				if (opts.announce) {
+					new Notice(
+						scheduled
+							? `Saive asked the plugin to wait ${seconds} seconds. Sync will resume on its own.`
+							: `Saive asked the plugin to wait ${seconds} seconds. Run "Sync now" again later.`,
+					);
+				}
 				return;
 			}
 			case 'mass-trash':
 				new Notice('Saive sync paused. Nothing was trashed.');
 				return;
 			case undefined:
+				this.retries = 0;
 				if (opts.announce) {
 					new Notice(
 						`Saive sync done: ${report.written} written, ${report.renamed} moved, ${report.trashed} trashed, ${report.conflicts} conflicts.`,
@@ -122,5 +154,27 @@ export default class SaivePlugin extends Plugin {
 				}
 				return;
 		}
+	}
+
+	// One pending retry at a time, at most MAX_RETRIES per load without a
+	// completed sync in between. The timer id is held here so unload clears
+	// it (see onload) and a second 429 replaces it instead of stacking.
+	private scheduleRetry(seconds: number): boolean {
+		if (this.retries >= MAX_RETRIES) return false;
+		this.retries += 1;
+		this.clearRetry();
+		this.retryTimer = window.setTimeout(
+			() => {
+				this.retryTimer = null;
+				void this.runSync({ full: false, announce: false });
+			},
+			(seconds + 1) * 1000,
+		);
+		return true;
+	}
+
+	private clearRetry(): void {
+		if (this.retryTimer !== null) window.clearTimeout(this.retryTimer);
+		this.retryTimer = null;
 	}
 }

@@ -87,6 +87,15 @@ interface Run {
 	/** uuid to the paths under root whose frontmatter carries it. */
 	index: Map<string, Set<string>>;
 	reconciled: boolean;
+	/** Files in state when the run began: the mass-trash guard's baseline. */
+	trackedAtStart: number;
+	/** The user approved this run's trashes at the guard; ask no more. */
+	trashApproved: boolean;
+}
+
+interface Running {
+	promise: Promise<SyncReport>;
+	full: boolean;
 }
 
 function uuidsOn(page: PullResponse): string[] {
@@ -109,25 +118,44 @@ export class SyncEngine {
 	private readonly conflictsDir: string;
 	private readonly log: (message: string) => void;
 	private readonly confirmMassTrash: SyncEngineOptions['confirmMassTrash'];
-	private running: Promise<SyncReport> | null = null;
+	private running: Running | null = null;
 
 	constructor(opts: SyncEngineOptions) {
 		this.client = opts.client;
 		this.vault = opts.vault;
 		this.store = opts.state;
-		this.root = opts.root.replace(/^\/+|\/+$/g, '');
+		this.root = opts.root.trim().replace(/^\/+|\/+$/g, '');
+		// An empty root would make `occupied` the whole vault and put every
+		// save at the vault's top level. Refuse rather than guess.
+		if (this.root === '') throw new RangeError('SyncEngine needs a non-empty root folder');
 		this.conflictsDir = `${this.root}/_conflicts`;
 		this.log = opts.log ?? (() => {});
 		this.confirmMassTrash = opts.confirmMassTrash;
 	}
 
-	/** Runs one sync. A call while one runs returns that run's promise. */
+	/**
+	 * Runs one sync. Never two at once: a call during a run joins that run,
+	 * except a full resync asked for during a regular run, which waits for
+	 * it and then runs on its own. A full resync during a full resync joins.
+	 */
 	sync(opts: SyncOptions = {}): Promise<SyncReport> {
-		if (this.running !== null) return this.running;
-		this.running = this.run(opts).finally(() => {
-			this.running = null;
-		});
-		return this.running;
+		const full = opts.full === true;
+		const current = this.running;
+		if (current !== null && (!full || current.full)) return current.promise;
+		const after =
+			current === null
+				? Promise.resolve()
+				: current.promise.then(
+						() => undefined,
+						() => undefined,
+					);
+		const promise = after
+			.then(() => this.run({ full }))
+			.finally(() => {
+				if (this.running?.promise === promise) this.running = null;
+			});
+		this.running = { promise, full };
+		return promise;
 	}
 
 	private async run(opts: SyncOptions): Promise<SyncReport> {
@@ -143,15 +171,18 @@ export class SyncEngine {
 		};
 		const loaded = await this.store.load();
 		// A state written before tombstones existed has no `ignored` field.
+		const state =
+			loaded === null
+				? emptyState()
+				: { ...loaded, ignored: (loaded as Partial<SyncState>).ignored ?? {} };
 		const run: Run = {
-			state:
-				loaded === null
-					? emptyState()
-					: { ...loaded, ignored: (loaded as Partial<SyncState>).ignored ?? {} },
+			state,
 			report,
 			occupied: new Set(),
 			index: new Map(),
 			reconciled: false,
+			trackedAtStart: Object.keys(state.files).length,
+			trashApproved: false,
 		};
 		await this.scanVault(run);
 
@@ -225,21 +256,20 @@ export class SyncEngine {
 		for (const paths of run.index.values()) paths.delete(path);
 	}
 
-	// What is on disk for these uuids: the indexed paths, plus the recorded
-	// path when it sits outside root (the root setting changed) and still
-	// carries the uuid. Hashes are read fresh each page: an earlier page may
-	// have written the file.
+	// What is on disk for these uuids: the recorded path whenever a file
+	// still sits there, plus every indexed path (a user copy or move). The
+	// recorded path counts without checking its frontmatter: the metadata
+	// cache is empty before Obsidian finishes indexing and for a file whose
+	// YAML broke, and a miss there must never read as "the user deleted it".
+	// A tombstone needs the recorded path gone AND no other file with the
+	// uuid. Hashes are read fresh each page: an earlier page may have
+	// written the file.
 	private async localIndexFor(run: Run, uuids: string[]): Promise<LocalIndex> {
 		const local: LocalIndex = {};
 		for (const uuid of uuids) {
 			const paths = new Set(run.index.get(uuid) ?? []);
 			const recorded = run.state.files[uuid]?.path;
-			if (
-				recorded !== undefined &&
-				!paths.has(recorded) &&
-				(await this.vault.exists(recorded)) &&
-				(await this.vault.uuidOf(recorded)) === uuid
-			) {
+			if (recorded !== undefined && !paths.has(recorded) && (await this.vault.exists(recorded))) {
 				paths.add(recorded);
 			}
 			if (paths.size === 0) continue;
@@ -270,11 +300,15 @@ export class SyncEngine {
 		const local = await this.localIndexFor(run, uuidsOn(page));
 		const plan = await planPage(before, page, local, this.planOptions(run));
 
-		const trashes = plan.actions.filter((a) => a.kind === 'trash').length;
-		const tracked = Object.keys(before.files).length;
-		if (trashes > massTrashLimit(tracked)) {
-			this.log(`Sync wants to trash ${trashes} of ${tracked} tracked files; asking first`);
-			if (!(await this.confirmMassTrash(trashes, tracked))) throw new Abort('mass-trash');
+		// The guard counts the whole run against the files tracked when it
+		// began, so a delete feed paged 20 at a time trips it like one page
+		// of 100 would. One approval covers the run.
+		const planned = plan.actions.filter((a) => a.kind === 'trash').length;
+		const total = run.report.trashed + planned;
+		if (planned > 0 && !run.trashApproved && total > massTrashLimit(run.trackedAtStart)) {
+			this.log(`Sync wants to trash ${total} of ${run.trackedAtStart} tracked files; asking first`);
+			if (!(await this.confirmMassTrash(total, run.trackedAtStart))) throw new Abort('mass-trash');
+			run.trashApproved = true;
 		}
 
 		let next = plan.state;

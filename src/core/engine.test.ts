@@ -125,6 +125,8 @@ class FakeVault implements VaultPort {
 	copies: [string, string][] = [];
 	/** 1-based index of the write call that throws. */
 	failOnWrite: number | null = null;
+	/** Obsidian's metadata cache before it has indexed: no uuid for any path. */
+	coldCache = false;
 
 	listMarkdown(root: string): Promise<string[]> {
 		return Promise.resolve(
@@ -134,7 +136,7 @@ class FakeVault implements VaultPort {
 
 	uuidOf(path: string): Promise<string | null> {
 		const text = this.files.get(path);
-		if (text === undefined || frontmatterField(text, 'saive_schema') === null) {
+		if (this.coldCache || text === undefined || frontmatterField(text, 'saive_schema') === null) {
 			return Promise.resolve(null);
 		}
 		return Promise.resolve(frontmatterField(text, 'uuid'));
@@ -420,6 +422,56 @@ describe('SyncEngine mass-trash guard', () => {
 		expect(report.aborted).toBeUndefined();
 		expect(report.trashed).toBe(10);
 		expect(quiet.confirms).toEqual([]);
+	});
+
+	it('counts the whole run: five pages of 20 deletes trip the guard on page 2', async () => {
+		const w = await seeded(100, { confirm: () => false });
+		for (let p = 0; p < 5; p++) {
+			w.server.feed.set(
+				p === 0 ? '100' : `${100 + p * 20}`,
+				page({
+					deleted: Array.from({ length: 20 }, (_, i) => ({
+						uuid: uuidN(p * 20 + i + 1),
+						seq: String(101 + p * 20 + i),
+					})),
+					nextCursor: `${100 + (p + 1) * 20}`,
+					hasMore: p < 4,
+				}),
+			);
+		}
+
+		const report = await w.engine.sync();
+
+		expect(report.aborted).toBe('mass-trash');
+		expect(report.trashed).toBe(20);
+		expect(w.confirms).toEqual([[40, 100]]);
+		expect(w.vault.trashed).toHaveLength(20);
+		expect(w.store.state.cursor).toBe('120');
+		expect(Object.keys(w.store.state.files)).toHaveLength(80);
+	});
+
+	it('one approval covers the run, and the baseline is the count at run start', async () => {
+		const w = await seeded(100, { confirm: () => true });
+		for (let p = 0; p < 5; p++) {
+			w.server.feed.set(
+				p === 0 ? '100' : `${100 + p * 20}`,
+				page({
+					deleted: Array.from({ length: 20 }, (_, i) => ({
+						uuid: uuidN(p * 20 + i + 1),
+						seq: String(101 + p * 20 + i),
+					})),
+					nextCursor: `${100 + (p + 1) * 20}`,
+					hasMore: p < 4,
+				}),
+			);
+		}
+
+		const report = await w.engine.sync();
+
+		expect(report.aborted).toBeUndefined();
+		expect(report.trashed).toBe(100);
+		expect(w.confirms).toEqual([[40, 100]]);
+		expect(w.store.state.cursor).toBe('200');
 	});
 
 	it('a body-edited file survives a remote delete and never counts toward the guard', async () => {
@@ -734,6 +786,50 @@ describe('SyncEngine conflicts, moves and occupied paths', () => {
 		expect(w.vault.files.get('Saive/Save 1 (00000000).md')).toBe(file(1).markdown);
 	});
 
+	it('a cold metadata cache never reads as a user delete: the recorded path counts while it exists', async () => {
+		const w = await seeded(3);
+		w.vault.coldCache = true;
+		const changed = file(1, { seq: '4', markdown: md(uuidN(1), 'Save 1', 'Remote change.') });
+		w.server.feed.set('3', page({ files: [changed, file(2, { seq: '5' })], nextCursor: '5' }));
+
+		const report = await w.engine.sync();
+
+		expect(report.written).toBe(1);
+		expect(report.skipped).toBe(1);
+		expect(w.logs.filter((l) => l.includes('user-deleted'))).toEqual([]);
+		expect(w.vault.files.get('Saive/Save 1.md')).toBe(changed.markdown);
+		expect(Object.keys(w.store.state.files)).toHaveLength(3);
+		expect(w.store.state.ignored).toEqual({});
+	});
+
+	it('a recorded path gone from disk with no other carrier is still a tombstone', async () => {
+		const w = await seeded(2);
+		w.vault.coldCache = true;
+		w.vault.files.delete('Saive/Save 1.md');
+		w.server.feed.set('2', page({ files: [file(1, { seq: '3' })], nextCursor: '3' }));
+
+		const report = await w.engine.sync();
+
+		expect(report.written).toBe(0);
+		expect(report.skipped).toBe(1);
+		expect(w.store.state.ignored).toEqual({ [uuidN(1)]: '3' });
+		expect(Object.keys(w.store.state.files)).toEqual([uuidN(2)]);
+	});
+
+	it('a file at the recorded path that lost its frontmatter is a body edit, not a delete', async () => {
+		const w = await seeded(1);
+		w.vault.files.set('Saive/Save 1.md', '# Stripped by hand\n');
+		const changed = file(1, { seq: '2', markdown: md(uuidN(1), 'Save 1', 'Remote change.') });
+		w.server.feed.set('1', page({ files: [changed], nextCursor: '2' }));
+
+		const report = await w.engine.sync();
+
+		expect(report.conflicts).toBe(1);
+		expect(report.written).toBe(1);
+		expect(w.vault.files.get('Saive/_conflicts/Save 1 (conflict 2026-09-17).md')).toBe('# Stripped by hand\n');
+		expect(w.vault.files.get('Saive/Save 1.md')).toBe(changed.markdown);
+	});
+
 	it('marks a user-deleted file as ignored and skips later updates for it', async () => {
 		const w = await seeded(1);
 		w.vault.files.delete('Saive/Save 1.md');
@@ -743,6 +839,21 @@ describe('SyncEngine conflicts, moves and occupied paths', () => {
 		w.server.feed.set('2', page({ files: [file(1, { seq: '3' })], nextCursor: '3' }));
 		expect((await w.engine.sync()).written).toBe(0);
 		expect(w.vault.files.has('Saive/Save 1.md')).toBe(false);
+	});
+});
+
+describe('SyncEngine root', () => {
+	it('refuses an empty root rather than spreading saves over the vault', () => {
+		for (const root of ['', ' ', '/', ' // ']) {
+			expect(() => world({ engine: { root } })).toThrow(RangeError);
+		}
+	});
+
+	it('trims whitespace and slashes from the root', async () => {
+		const w = world({ engine: { root: ' /Library/ ' } });
+		w.server.feed.set('0', page({ files: [file(1)], nextCursor: '1' }));
+		await w.engine.sync();
+		expect(w.vault.files.has('Library/Save 1.md')).toBe(true);
 	});
 });
 
@@ -762,6 +873,58 @@ describe('SyncEngine single flight', () => {
 		expect(third).not.toBe(first);
 		await third;
 		expect(w.server.pulls()).toHaveLength(2);
+	});
+
+	it('a full resync asked for during a regular run waits for it, then runs on its own', async () => {
+		const w = await seeded(2);
+		w.vault.files.delete('Saive/Save 2.md');
+		w.server.feed.set('2', page({ files: [file(2, { seq: '3' })], nextCursor: '3' }));
+		w.server.saves.set(uuidN(2), file(2, { seq: '3' }));
+		w.server.manifestCursor = '3';
+		w.server.feed.set('3', page({ nextCursor: '3' }));
+
+		const regular = w.engine.sync();
+		const full = w.engine.sync({ full: true });
+		expect(full).not.toBe(regular);
+		const joined = w.engine.sync();
+		expect(joined).toBe(full);
+
+		const [r1, r2] = await Promise.all([regular, full]);
+
+		// The regular run tombstoned the file; the full run brought it back.
+		expect(r1.reconciled).toBe(false);
+		expect(r1.skipped).toBe(1);
+		expect(r2.reconciled).toBe(true);
+		expect(r2.written).toBe(1);
+		expect(w.store.state.ignored).toEqual({});
+		const manifestAt = w.server.calls.indexOf('https://app.saive.my/api/sync/manifest');
+		expect(manifestAt).toBeGreaterThan(0);
+		expect(w.server.calls[0]).toBe('https://app.saive.my/api/sync/pull?since=2');
+		expect(w.engine.sync()).not.toBe(full);
+	});
+
+	it('a full resync during a full resync joins it', async () => {
+		const w = await seeded(1);
+		w.server.feed.set('1', page({ nextCursor: '1' }));
+		const first = w.engine.sync({ full: true });
+		const second = w.engine.sync({ full: true });
+		expect(second).toBe(first);
+		await first;
+		expect(w.server.calls.filter((c) => c.includes('manifest'))).toHaveLength(1);
+	});
+
+	it('a full resync queued behind a failed run still runs', async () => {
+		const w = world();
+		w.server.feed.set('0', page({ files: [file(1)], nextCursor: '1' }));
+		// The first write call fails (the regular run's); the full run's is the second.
+		w.vault.failOnWrite = 1;
+		const regular = w.engine.sync();
+		const full = w.engine.sync({ full: true });
+		w.server.saves.set(uuidN(1), file(1));
+		w.server.manifestCursor = '1';
+		w.server.feed.set('1', page({ nextCursor: '1' }));
+		await expect(regular).rejects.toThrow('disk full');
+		expect((await full).written).toBe(1);
 	});
 
 	it('a failed run releases the lock', async () => {

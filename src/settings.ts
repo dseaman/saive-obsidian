@@ -15,9 +15,16 @@ export const DEFAULT_SETTINGS: SaiveSettings = {
 	intervalMinutes: 15,
 };
 
+/** The root as the engine sees it: no surrounding whitespace or slashes. */
+export function cleanRoot(root: string): string {
+	return root.trim().replace(/^\/+|\/+$/g, '');
+}
+
 export function settingsFrom(raw: unknown): SaiveSettings {
 	const row = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
-	const root = typeof row.root === 'string' && row.root.trim() !== '' ? row.root : DEFAULT_SETTINGS.root;
+	// A root of "" or "/" would spread saves over the whole vault.
+	const root =
+		typeof row.root === 'string' && cleanRoot(row.root) !== '' ? cleanRoot(row.root) : DEFAULT_SETTINGS.root;
 	const minutes =
 		typeof row.intervalMinutes === 'number' && Number.isFinite(row.intervalMinutes) && row.intervalMinutes >= 0
 			? row.intervalMinutes

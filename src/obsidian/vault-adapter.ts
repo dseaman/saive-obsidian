@@ -6,11 +6,17 @@
 
 import { normalizePath, TFile, TFolder } from 'obsidian';
 import type { App } from 'obsidian';
+import { frontmatterField } from '../core/frontmatter';
 import type { VaultPort } from '../core/ports';
 
 function parentOf(path: string): string | null {
 	const slash = path.lastIndexOf('/');
 	return slash === -1 ? null : path.slice(0, slash);
+}
+
+function uuidFrom(uuid: unknown, schema: unknown): string | null {
+	if (schema === undefined || schema === null) return null;
+	return typeof uuid === 'string' ? uuid : null;
 }
 
 export class ObsidianVault implements VaultPort {
@@ -24,15 +30,19 @@ export class ObsidianVault implements VaultPort {
 			.filter((p) => p.startsWith(prefix));
 	}
 
+	// The metadata cache is the fast path. It has no entry for a file before
+	// Obsidian finishes indexing (a cold start, a big vault, a fresh mobile
+	// launch) and no frontmatter for a block its YAML parser rejected, so a
+	// miss falls back to the file's own bytes and the plugin's own reader.
 	async uuidOf(path: string): Promise<string | null> {
 		const file = this.fileAt(path);
 		if (file === null) return null;
-		const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		if (fm === undefined) return null;
-		const uuid: unknown = fm.uuid;
-		const schema: unknown = fm.saive_schema;
-		if (schema === undefined || schema === null) return null;
-		return typeof uuid === 'string' ? uuid : null;
+		const cache = this.app.metadataCache.getFileCache(file);
+		const fm = cache?.frontmatter;
+		if (fm !== undefined) return uuidFrom(fm.uuid, fm.saive_schema);
+		const text = await this.app.vault.cachedRead(file);
+		if (!text.startsWith('---')) return null;
+		return uuidFrom(frontmatterField(text, 'uuid'), frontmatterField(text, 'saive_schema'));
 	}
 
 	async read(path: string): Promise<string> {
@@ -42,7 +52,7 @@ export class ObsidianVault implements VaultPort {
 	}
 
 	async exists(path: string): Promise<boolean> {
-		return this.app.vault.adapter.exists(normalizePath(path));
+		return this.fileAt(path) !== null;
 	}
 
 	async write(path: string, markdown: string): Promise<void> {
