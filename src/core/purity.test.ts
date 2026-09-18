@@ -95,6 +95,18 @@ describe('src/ keeps the token in one place', () => {
 			expect(source, path).not.toMatch(/(?:saveData|saveLocalStorage)\([^)]*\b(?:secret|token)\b/i);
 		}
 	});
+
+	// A secret is stored by runLinkFlow after the server accepted it, and by
+	// nothing else: main.ts hands the store over, it never calls set itself.
+	it('stores a secret only through runLinkFlow', () => {
+		for (const path of files) {
+			const name = path.slice(srcDir.length);
+			const source = code(readFileSync(path, 'utf8'));
+			if (name.endsWith('obsidian/token-store.ts')) continue;
+			expect(source, name).not.toMatch(/\btokens\.set\(|\bsetSecret\(/);
+			if (!name.endsWith('core/link.ts')) expect(source, name).not.toMatch(/\bstore\.set\(/);
+		}
+	});
 });
 
 describe('src/ is a read-only client', () => {

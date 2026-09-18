@@ -6,7 +6,7 @@ import { moment, normalizePath, Notice, PluginSettingTab, Setting } from 'obsidi
 import type { App } from 'obsidian';
 import { DOCS_URL, PRIVACY_URL, SIGNUP_URL } from '../core/link';
 import type SaivePlugin from '../main';
-import { AUTO_SYNC_OPTIONS, autoSyncFrom, autoSyncLabel, cleanRoot } from '../settings';
+import { AUTO_SYNC_OPTIONS, autoSyncFrom, autoSyncLabel, cleanRoot, rootProblem } from '../settings';
 
 /** How often the "Last sync" line re-renders while the tab is open. */
 const STATUS_REFRESH_MS = 30_000;
@@ -41,6 +41,8 @@ export class SaiveSettingTab extends PluginSettingTab {
 	private async render(): Promise<void> {
 		const el = this.containerEl;
 		const linked = await this.plugin.isLinked();
+		// Hidden during the await: hide() emptied the container; leave it so.
+		if (!this.visible) return;
 
 		new Setting(el).setName('Account').setHeading();
 		if (linked) {
@@ -81,8 +83,9 @@ export class SaiveSettingTab extends PluginSettingTab {
 				// Save on Enter or blur, so a half-typed name never reaches the engine.
 				text.inputEl.addEventListener('change', () => {
 					const root = cleanRoot(normalizePath(text.getValue()));
-					if (root === '') {
-						new Notice('Folder cannot be empty.');
+					const problem = rootProblem(root);
+					if (problem !== null) {
+						new Notice(problem === 'empty' ? 'Folder cannot be empty.' : 'Folder must stay inside the vault.');
 						text.setValue(this.plugin.settings.root);
 						return;
 					}
@@ -150,11 +153,14 @@ export class SaiveSettingTab extends PluginSettingTab {
 		status.setDesc(`${moment(last.at).fromNow()} · ${notes}`);
 	}
 
+	// Registered with the plugin so unload clears it even if hide() never
+	// runs; hide() clears it too, so a closed tab costs nothing.
 	private startRefresh(status: Setting): void {
 		this.stopRefresh();
 		this.refreshTimer = window.setInterval(() => {
 			this.renderStatus(status);
 		}, STATUS_REFRESH_MS);
+		this.plugin.registerInterval(this.refreshTimer);
 	}
 
 	private stopRefresh(): void {

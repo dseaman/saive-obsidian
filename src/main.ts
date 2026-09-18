@@ -1,8 +1,8 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Platform, Plugin } from 'obsidian';
 import { SyncClient } from './core/client';
 import { SyncEngine } from './core/engine';
 import type { SyncReport } from './core/engine';
-import { BASE_URL, generateSecret, startLink } from './core/link';
+import { BASE_URL, generateSecret, runLinkFlow, startLink } from './core/link';
 import { ObsidianHttp } from './obsidian/http-adapter';
 import { LinkModal } from './obsidian/link-modal';
 import { confirmMassTrash } from './obsidian/mass-trash-modal';
@@ -15,7 +15,7 @@ import {
 	trackedCount,
 	writeAutoSync,
 } from './obsidian/state-adapter';
-import { SecretStorageUnavailableError, TokenStore } from './obsidian/token-store';
+import { TokenStore } from './obsidian/token-store';
 import { ObsidianVault } from './obsidian/vault-adapter';
 import { DEFAULT_SETTINGS } from './settings';
 import type { AutoSyncMinutes, SaiveSettings } from './settings';
@@ -92,6 +92,8 @@ export default class SaivePlugin extends Plugin {
 		// The consent page links back here once the user approves. The page
 		// cannot hand over anything (the plugin holds the secret; the server
 		// holds its hash), so the link only asks the plugin to check again.
+		// No nonce: the worst a forged obsidian://saive?linked=1 can do is
+		// start a read-only sync the interval would have started anyway.
 		this.registerObsidianProtocolHandler('saive', (params) => {
 			if (params.linked !== '1' && params.linked !== 'true') return;
 			if (this.linkModal !== null) {
@@ -130,34 +132,42 @@ export default class SaivePlugin extends Plugin {
 	}
 
 	/**
-	 * Generate a fresh secret, store it, open the consent page and show the
-	 * check code. A second link replaces the secret; the old server row idles
-	 * out. Resolves when the modal closes: linked, cancelled or timed out.
+	 * Generate a candidate secret, open the consent page and show the check
+	 * code. The candidate stays in memory until the server accepts it
+	 * (runLinkFlow stores it on 'linked' and never otherwise), so a linked
+	 * user who starts a second link and walks away keeps the working secret.
+	 * Resolves when the modal closes: linked, cancelled or timed out.
 	 */
 	async connectAccount(): Promise<void> {
-		const client = this.client;
-		if (client === null) return;
-		this.linkModal?.close();
-		const secret = generateSecret((n) => crypto.getRandomValues(new Uint8Array(n)));
-		try {
-			await this.tokens.set(secret);
-		} catch (err) {
-			if (!(err instanceof SecretStorageUnavailableError)) throw err;
+		if (!this.tokens.available()) {
 			new Notice('Saive needs Obsidian 1.11.4 or later.');
 			return;
 		}
+		this.linkModal?.close();
+		const secret = generateSecret((n) => crypto.getRandomValues(new Uint8Array(n)));
 		const { code, url } = await startLink({
 			secret,
 			vaultName: this.app.vault.getName(),
 			baseUrl: BASE_URL,
 		});
-		this.openUrl(url);
+		// A client for the poll alone: its token is the candidate, not the
+		// secret in storage.
+		const candidate = new SyncClient({
+			baseUrl: BASE_URL,
+			http: new ObsidianHttp(),
+			token: () => Promise.resolve(secret),
+			pluginVersion: this.manifest.version,
+		});
+		// Mobile WebViews drop a window.open that follows an await; the modal
+		// carries a real link for the tap. Desktop opens the page at once.
+		const autoOpened = !Platform.isMobile;
+		if (autoOpened) this.openUrl(url);
 		await new Promise<void>((resolve) => {
 			const modal = new LinkModal(this.app, {
 				code,
 				url,
-				client,
-				openUrl: (u) => this.openUrl(u),
+				autoOpened,
+				run: (poll) => runLinkFlow({ secret, client: candidate, store: this.tokens, poll }),
 				onLinked: () => {
 					this.warnedUnlinked = false;
 					void this.runSync({ full: false, announce: true });

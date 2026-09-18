@@ -1,4 +1,7 @@
 import obsidianmd from 'eslint-plugin-obsidianmd';
+// A deep import: the plugin exports no brand list from its entry. The
+// package version is pinned exactly in package.json so the path cannot
+// drift under a caret update.
 import { DEFAULT_BRANDS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/brands.js';
 import globals from 'globals';
 import { globalIgnores, defineConfig } from 'eslint/config';

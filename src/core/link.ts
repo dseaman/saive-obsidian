@@ -109,13 +109,15 @@ export async function pollUntilLinked(client: MeClient, opts: PollOptions): Prom
 		let waitMs = intervalMs;
 		try {
 			const me = await client.me();
-			if (me.linked) return 'linked';
+			// A cancel during the request wins: the caller closed the modal
+			// and must not see a link it walked away from.
+			if (me.linked) return opts.isCancelled() ? 'cancelled' : 'linked';
 			failures = 0;
 		} catch (err) {
-			if (err instanceof UnlinkedError) {
+			if (err instanceof UnlinkedError || err instanceof RateLimitedError) {
+				// Both mean the server answered as expected; neither is a failure.
 				failures = 0;
-			} else if (err instanceof RateLimitedError) {
-				waitMs = err.retryAfterSeconds * 1000;
+				if (err instanceof RateLimitedError) waitMs = err.retryAfterSeconds * 1000;
 			} else {
 				failures += 1;
 				if (failures >= MAX_POLL_FAILURES) throw err;
@@ -125,4 +127,26 @@ export async function pollUntilLinked(client: MeClient, opts: PollOptions): Prom
 		if (now() - started + waitMs > timeoutMs) return 'timeout';
 		await opts.sleep(waitMs);
 	}
+}
+
+export interface LinkFlowDeps {
+	/** The candidate secret, held in memory until the server accepts it. */
+	secret: string;
+	/** A client whose token getter returns the candidate, not the stored secret. */
+	client: MeClient;
+	/** The secret store; called once, after 'linked', never before. */
+	store: { set(secret: string): Promise<void> };
+	poll: PollOptions;
+}
+
+/**
+ * The whole link, from the first poll to the stored secret. The store runs
+ * only on 'linked': a cancel, a timeout, an error or an unload leaves
+ * whatever secret the device held before untouched, so a linked user who
+ * starts a second link and walks away stays linked.
+ */
+export async function runLinkFlow(deps: LinkFlowDeps): Promise<PollResult> {
+	const result = await pollUntilLinked(deps.client, deps.poll);
+	if (result === 'linked') await deps.store.set(deps.secret);
+	return result;
 }

@@ -11,10 +11,12 @@ import {
 	POLL_INTERVAL_MS,
 	POLL_TIMEOUT_MS,
 	pollUntilLinked,
+	runLinkFlow,
 	SECRET_KEY,
 	SIGNUP_URL,
 	startLink,
 } from './link';
+import type { MeClient, PollOptions } from './link';
 import { linkCode } from './link-code';
 
 // The link flow's pure half. generateSecret and startLink pin the token
@@ -129,7 +131,7 @@ class FakeClock {
 const unlinked = (): Step => ({ throw: new UnlinkedError() });
 const linked = (): Step => ({ ok: { linked: true } });
 
-function poll(client: FakeClient, clock: FakeClock, extra: Partial<Parameters<typeof pollUntilLinked>[1]> = {}) {
+function poll(client: FakeClient, clock: FakeClock, extra: Partial<PollOptions> = {}) {
 	return pollUntilLinked(client, {
 		sleep: clock.sleep,
 		isCancelled: clock.isCancelled,
@@ -219,10 +221,90 @@ describe('pollUntilLinked', () => {
 		expect(thrice.calls).toBe(MAX_POLL_FAILURES);
 	});
 
-	it('resets the failure count after a request that reached the server', async () => {
+	it('resets the failure count after a 401 or a 429, both expected answers', async () => {
 		const boom = () => ({ throw: new ContractError('$', 'must be JSON') });
-		const client = new FakeClient([boom(), boom(), unlinked(), boom(), boom(), linked()]);
-		await expect(poll(client, new FakeClock())).resolves.toBe('linked');
-		expect(client.calls).toBe(6);
+		const after401 = new FakeClient([boom(), boom(), unlinked(), boom(), boom(), linked()]);
+		await expect(poll(after401, new FakeClock())).resolves.toBe('linked');
+		expect(after401.calls).toBe(6);
+
+		const after429 = new FakeClient([
+			boom(),
+			boom(),
+			{ throw: new RateLimitedError(1) },
+			boom(),
+			boom(),
+			linked(),
+		]);
+		await expect(poll(after429, new FakeClock())).resolves.toBe('linked');
+		expect(after429.calls).toBe(6);
+	});
+
+	it('returns cancelled when the cancel lands while a request that says linked is in flight', async () => {
+		const clock = new FakeClock();
+		const client: MeClient = {
+			me: () => {
+				clock.cancelled = true;
+				return Promise.resolve({ linked: true });
+			},
+		};
+		await expect(
+			pollUntilLinked(client, { sleep: clock.sleep, isCancelled: clock.isCancelled, now: () => clock.now }),
+		).resolves.toBe('cancelled');
+	});
+});
+
+// The store must run after the server said yes and never otherwise. A
+// secret written before approval would replace a working one on a device
+// that was already linked, and every sync after a cancel would abort.
+describe('runLinkFlow', () => {
+	class FakeStore {
+		stored: string[] = [];
+		storedAfterCalls: number[] = [];
+		constructor(private readonly client: FakeClient) {}
+		set(secret: string): Promise<void> {
+			this.stored.push(secret);
+			this.storedAfterCalls.push(this.client.calls);
+			return Promise.resolve();
+		}
+	}
+
+	function flow(client: FakeClient, clock: FakeClock, poll: Partial<PollOptions> = {}) {
+		const store = new FakeStore(client);
+		const done = runLinkFlow({
+			secret: 'sv_obs_candidate',
+			client,
+			store,
+			poll: { sleep: clock.sleep, isCancelled: clock.isCancelled, now: () => clock.now, ...poll },
+		});
+		return { store, done };
+	}
+
+	it('stores the candidate once, after the poll returned linked', async () => {
+		const client = new FakeClient([unlinked(), linked()]);
+		const { store, done } = flow(client, new FakeClock());
+		await expect(done).resolves.toBe('linked');
+		expect(store.stored).toEqual(['sv_obs_candidate']);
+		expect(store.storedAfterCalls).toEqual([2]);
+	});
+
+	it('stores nothing on cancel', async () => {
+		const clock = new FakeClock();
+		clock.cancelled = true;
+		const { store, done } = flow(new FakeClient([linked()]), clock);
+		await expect(done).resolves.toBe('cancelled');
+		expect(store.stored).toEqual([]);
+	});
+
+	it('stores nothing on timeout', async () => {
+		const { store, done } = flow(new FakeClient([]), new FakeClock(), { intervalMs: 1000, timeoutMs: 2500 });
+		await expect(done).resolves.toBe('timeout');
+		expect(store.stored).toEqual([]);
+	});
+
+	it('stores nothing when the poll throws', async () => {
+		const boom = () => ({ throw: new ServerError(500, '/api/sync/me') });
+		const { store, done } = flow(new FakeClient([boom(), boom(), boom()]), new FakeClock());
+		await expect(done).rejects.toBeInstanceOf(ServerError);
+		expect(store.stored).toEqual([]);
 	});
 });

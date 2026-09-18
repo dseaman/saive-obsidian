@@ -24,6 +24,8 @@ export class TokenStore {
 		return typeof storage === 'object' && storage !== null;
 	}
 
+	// getSecret and setSecret are synchronous in the installed obsidian.d.ts
+	// (1.13.1); the Promise signatures here leave room for a future async store.
 	get(): Promise<string | null> {
 		if (!this.available()) return Promise.resolve(null);
 		const secret = this.app.secretStorage.getSecret(SECRET_KEY);

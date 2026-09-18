@@ -6,6 +6,7 @@ import {
 	cleanRoot,
 	DEFAULT_AUTO_SYNC,
 	DEFAULT_SETTINGS,
+	rootProblem,
 	settingsFrom,
 } from './settings';
 
@@ -38,6 +39,24 @@ describe('settingsFrom', () => {
 		for (const root of ['', '   ', '/', ' // ']) {
 			expect(settingsFrom({ root }).root).toBe(DEFAULT_SETTINGS.root);
 		}
+	});
+
+	it('falls back to the default root when a segment would leave the vault', () => {
+		for (const root of ['..', '../Saive', 'Saive/..', 'Notes/../Saive', '/../x']) {
+			expect(settingsFrom({ root }).root).toBe(DEFAULT_SETTINGS.root);
+		}
+		// Dots inside a name are a name, not a step up.
+		expect(settingsFrom({ root: 'Saive..old' }).root).toBe('Saive..old');
+		expect(settingsFrom({ root: '.saive' }).root).toBe('.saive');
+	});
+});
+
+describe('rootProblem', () => {
+	it('names the reason the settings tab shows', () => {
+		expect(rootProblem('')).toBe('empty');
+		expect(rootProblem('a/../b')).toBe('escapes');
+		expect(rootProblem('..')).toBe('escapes');
+		expect(rootProblem('Library/Saive')).toBeNull();
 	});
 });
 

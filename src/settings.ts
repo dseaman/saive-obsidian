@@ -19,11 +19,21 @@ export function cleanRoot(root: string): string {
 	return root.trim().replace(/^\/+|\/+$/g, '');
 }
 
+/**
+ * Why a cleaned root is unusable, or null when it is fine. An empty root
+ * would spread saves over the whole vault; a `..` segment would point the
+ * mirror outside it.
+ */
+export function rootProblem(root: string): 'empty' | 'escapes' | null {
+	if (root === '') return 'empty';
+	if (root.split('/').some((segment) => segment === '..')) return 'escapes';
+	return null;
+}
+
 export function settingsFrom(raw: unknown): SaiveSettings {
 	const row = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
-	// A root of "" or "/" would spread saves over the whole vault.
-	const root =
-		typeof row.root === 'string' && cleanRoot(row.root) !== '' ? cleanRoot(row.root) : DEFAULT_SETTINGS.root;
+	const cleaned = typeof row.root === 'string' ? cleanRoot(row.root) : '';
+	const root = rootProblem(cleaned) === null ? cleaned : DEFAULT_SETTINGS.root;
 	return { root };
 }
 

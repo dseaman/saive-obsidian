@@ -27,3 +27,30 @@
 	font-size: var(--font-ui-small);
 	margin: 0 0 var(--size-4-3);
 }
+
+/* The link modal's actions: the consent page as a real anchor (mobile
+   WebViews need the tap on the link itself) beside a plain Cancel. */
+.saive-link-actions {
+	display: flex;
+	gap: var(--size-4-2);
+	justify-content: flex-end;
+	margin-top: var(--size-4-4);
+}
+
+.saive-link-open {
+	display: inline-flex;
+	align-items: center;
+	padding: var(--size-4-1) var(--size-4-3);
+	border-radius: var(--button-radius);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-medium);
+	text-decoration: none;
+}
+
+.saive-link-open:hover {
+	background: var(--interactive-accent-hover);
+	color: var(--text-on-accent);
+	text-decoration: none;
+}
