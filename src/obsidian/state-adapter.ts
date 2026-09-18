@@ -1,15 +1,15 @@
 // StatePort over the plugin's data.json, plus the per-device auto-sync
-// flag. data.json holds `{ settings, sync }` and travels with the vault
+// interval. data.json holds `{ settings, sync }` and travels with the vault
 // (iCloud, git, Obsidian Sync), so the sync token is never written here:
-// it lives in app.secretStorage. The auto-sync flag goes through
+// it lives in app.secretStorage. The auto-sync interval goes through
 // app.saveLocalStorage for the same reason in reverse: it is a property of
 // this device, and a phone should not inherit a desktop's choice.
 
 import type { App, Plugin } from 'obsidian';
 import type { SyncState } from '../core/plan';
 import type { StatePort } from '../core/ports';
-import { settingsFrom } from '../settings';
-import type { SaiveSettings } from '../settings';
+import { autoSyncFrom, settingsFrom } from '../settings';
+import type { AutoSyncMinutes, SaiveSettings } from '../settings';
 
 export interface PluginData {
 	settings: SaiveSettings;
@@ -50,12 +50,17 @@ export class PluginDataState implements StatePort {
 	}
 }
 
-/** Whether this device syncs on an interval. Defaults to on. */
-export function readAutoSync(app: App): boolean {
-	const stored: unknown = app.loadLocalStorage(AUTO_SYNC_KEY);
-	return stored === null || stored === undefined ? true : stored === true;
+/** How often this device syncs on its own, in minutes; 0 means manual only. */
+export function readAutoSync(app: App): AutoSyncMinutes {
+	return autoSyncFrom(app.loadLocalStorage(AUTO_SYNC_KEY));
 }
 
-export function writeAutoSync(app: App, on: boolean): void {
-	app.saveLocalStorage(AUTO_SYNC_KEY, on);
+export function writeAutoSync(app: App, minutes: AutoSyncMinutes): void {
+	app.saveLocalStorage(AUTO_SYNC_KEY, minutes);
+}
+
+/** Files the last completed sync left tracked, for the settings tab's status line. */
+export async function trackedCount(plugin: Plugin): Promise<number> {
+	const { sync } = await loadPluginData(plugin);
+	return sync === null ? 0 : Object.keys(sync.files).length;
 }

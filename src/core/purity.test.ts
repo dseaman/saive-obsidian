@@ -41,7 +41,7 @@ function walk(root: string): string[] {
 }
 
 describe('src/core stays pure', () => {
-	it('has the nine shipped modules', () => {
+	it('has the ten shipped modules', () => {
 		expect(shipped.sort()).toEqual([
 			'client.ts',
 			'contract.ts',
@@ -50,6 +50,7 @@ describe('src/core stays pure', () => {
 			'frontmatter.ts',
 			'hash.ts',
 			'link-code.ts',
+			'link.ts',
 			'plan.ts',
 			'ports.ts',
 		]);
@@ -63,6 +64,48 @@ describe('src/core stays pure', () => {
 		expect(source).not.toMatch(/\bfrom\s+['"]obsidian['"]/);
 		expect(source).not.toMatch(/\bfrom\s+['"](?:node:|electron)/);
 		expect(source).not.toMatch(/\bprocess\.env\b/);
+	});
+});
+
+// Rule 2 of CLAUDE.md: the token lives in app.secretStorage and nowhere
+// else. One module talks to that store; nothing else names it, and nothing
+// writes the secret through saveData or localStorage.
+describe('src/ keeps the token in one place', () => {
+	const files = walk(srcDir);
+
+	// Comments may explain where the token lives; code may not touch it.
+	function code(source: string): string {
+		return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+	}
+
+	it.each(files.map((f) => [f.slice(srcDir.length), f]))(
+		'%s touches secretStorage only through token-store.ts',
+		(name, path) => {
+			const source = code(readFileSync(path, 'utf8'));
+			if (name.endsWith('obsidian/token-store.ts')) return;
+			expect(source).not.toMatch(/\bsecretStorage\b/);
+			// link.ts defines the key; token-store.ts is the only other file that may name it.
+			if (!name.endsWith('core/link.ts')) expect(source).not.toMatch(/\bSECRET_KEY\b|saive-sync-token/);
+		},
+	);
+
+	it('never hands a secret to saveData or localStorage', () => {
+		for (const path of files) {
+			const source = readFileSync(path, 'utf8');
+			expect(source, path).not.toMatch(/(?:saveData|saveLocalStorage)\([^)]*\b(?:secret|token)\b/i);
+		}
+	});
+
+	// A secret is stored by runLinkFlow after the server accepted it, and by
+	// nothing else: main.ts hands the store over, it never calls set itself.
+	it('stores a secret only through runLinkFlow', () => {
+		for (const path of files) {
+			const name = path.slice(srcDir.length);
+			const source = code(readFileSync(path, 'utf8'));
+			if (name.endsWith('obsidian/token-store.ts')) continue;
+			expect(source, name).not.toMatch(/\btokens\.set\(|\bsetSecret\(/);
+			if (!name.endsWith('core/link.ts')) expect(source, name).not.toMatch(/\bstore\.set\(/);
+		}
 	});
 });
 
