@@ -82,7 +82,7 @@ async function onDisk(path: string, markdown: string): Promise<LocalFile> {
 }
 
 function state(files: Record<string, FileState> = {}, over: Partial<SyncState> = {}): SyncState {
-	return { cursor: '1000', lastReconcileServerTime: null, files, ...over };
+	return { cursor: '1000', lastReconcileServerTime: null, files, ignored: {}, ...over };
 }
 
 const kinds = (actions: Action[]) => actions.map((a) => a.kind);
@@ -512,7 +512,9 @@ describe('duplicate uuid on disk', () => {
 });
 
 describe('files the user deleted', () => {
-	it('stay gone: the update is skipped and the uuid leaves the state', async () => {
+	const skipped = [{ kind: 'skip', uuid: U1, reason: 'user-deleted' }];
+
+	it('move from files to ignored, with the seq the plugin noticed at', async () => {
 		const s = state({ [U1]: await tracked(MD1) });
 		for (const local of [{}, { [U1]: [] }]) {
 			const { actions, state: next } = await run(
@@ -520,10 +522,99 @@ describe('files the user deleted', () => {
 				page({ files: [entry({ markdown: remoteEdit(MD1) })] }),
 				local,
 			);
-			expect(actions).toEqual([{ kind: 'skip', uuid: U1, reason: 'user-deleted' }]);
+			expect(actions).toEqual(skipped);
 			expect(next.files[U1]).toBeUndefined();
+			expect(next.ignored).toEqual({ [U1]: '1100' });
 			expect(next.cursor).toBe('2000');
 		}
+	});
+
+	it('stay gone across later remote updates', async () => {
+		let s = state({ [U1]: await tracked(MD1) });
+		const updates = [
+			page({ files: [entry({ seq: '1100', markdown: remoteEdit(MD1) })], nextCursor: '1100' }),
+			page({ files: [entry({ seq: '1200', title: 'Renamed' })], nextCursor: '1200' }),
+			page({ files: [entry({ seq: '1300', folder: null })], nextCursor: '1300' }),
+		];
+		for (const p of updates) {
+			const { actions, state: next } = await run(s, p);
+			expect(actions).toEqual(skipped);
+			expect(next.files[U1]).toBeUndefined();
+			expect(next.ignored).toEqual({ [U1]: '1100' });
+			s = next;
+		}
+		expect(s.cursor).toBe('1300');
+	});
+
+	it('are not fetched when oversize, unless the file is back', async () => {
+		const s = state({}, { ignored: { [U1]: '1100' } });
+		const p = page({ oversize: [{ uuid: U1, seq: '1200' }] });
+		expect((await run(s, p)).actions).toEqual(skipped);
+		expect((await run(s, p, { [U1]: [await onDisk(P1, MD1)] })).actions).toEqual([
+			{ kind: 'fetch', uuid: U1, seq: '1200' },
+		]);
+	});
+
+	it('lose the tombstone on a remote delete, with nothing to trash', async () => {
+		const s = state({}, { ignored: { [U1]: '1100' } });
+		const { actions, state: next } = await run(
+			s,
+			page({ deleted: [{ uuid: U1, seq: '1200' }] }),
+			{ [U1]: [await onDisk(P1, MD1)] },
+		);
+		expect(actions).toEqual([]);
+		expect(next.ignored).toEqual({});
+		expect(next.files[U1]).toBeUndefined();
+	});
+
+	it('sync again once the file is back on disk', async () => {
+		const s = state({}, { ignored: { [U1]: '1100' } });
+		const restored = { [U1]: [await onDisk(P1, MD1)] };
+
+		const same = await run(s, page({ files: [entry({ seq: '1200' })] }), restored);
+		expect(same.actions).toEqual([{ kind: 'skip', uuid: U1, reason: 'unchanged' }]);
+		expect(same.state.ignored).toEqual({});
+		expect(same.state.files[U1]?.path).toBe(P1);
+		expect(same.state.files[U1]?.seq).toBe('1200');
+
+		const changed = await run(
+			s,
+			page({ files: [entry({ seq: '1200', markdown: frontmatterEdit(MD1) })] }),
+			restored,
+		);
+		expect(kinds(changed.actions)).toEqual(['write']);
+		expect(changed.state.ignored).toEqual({});
+	});
+
+	it('keep their tombstone through pages that touch other uuids', async () => {
+		const s = state({ [U2]: await tracked(MD2, { path: 'Saive/Unfiled save.md', remoteFolder: null }) }, {
+			ignored: { [U1]: '1100' },
+		});
+		const { actions, state: next } = await run(
+			s,
+			page({
+				files: [
+					entry({
+						uuid: U2,
+						seq: '1200',
+						folder: null,
+						title: 'Unfiled save',
+						markdown: MD2.replace('Body.', 'Changed.'),
+					}),
+				],
+				deleted: [{ uuid: U3, seq: '1201' }],
+			}),
+			{ [U2]: [await onDisk('Saive/Unfiled save.md', MD2)] },
+		);
+		expect(kinds(actions)).toEqual(['write']);
+		expect(next.ignored).toEqual({ [U1]: '1100' });
+	});
+
+	it('treat a state saved without the ignored field as having none', async () => {
+		const legacy = { cursor: '1000', lastReconcileServerTime: null, files: {} } as SyncState;
+		const { actions, state: next } = await run(legacy, page({ files: [entry()] }));
+		expect(kinds(actions)).toEqual(['write']);
+		expect(next.ignored).toEqual({});
 	});
 });
 

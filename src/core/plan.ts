@@ -17,8 +17,10 @@
 //   - The user owns placement. A file the user moved or renamed stays where
 //     it is; the plugin renames for a remote title or folder change only
 //     while the file sits at the path the plugin last recorded.
-//   - A file the user deleted stays deleted: the update is skipped and the
-//     uuid leaves the state. Full resync is the way back.
+//   - A file the user deleted stays deleted: the uuid moves from `files` to
+//     `ignored`, every later update for it is skipped, and a remote delete
+//     clears the tombstone. A file that reappears on disk (restored from
+//     trash) is adopted again. Full resync is the other way back.
 //   - A remote delete trashes a file whose body the user left alone and
 //     keeps one the user edited. The plugin never trashes a file it did not
 //     record.
@@ -43,6 +45,13 @@ export interface SyncState {
 	cursor: string;
 	lastReconcileServerTime: string | null;
 	files: Record<string, FileState>;
+	/**
+	 * Saves the user deleted from the vault: uuid to the seq at which the
+	 * plugin noticed the file was gone. Updates for these are skipped so the
+	 * file never comes back on its own. Reconcile and "Full resync" (P2)
+	 * clear this map.
+	 */
+	ignored: Record<string, string>;
 }
 
 export interface LocalFile {
@@ -150,6 +159,8 @@ export async function planPage(
 	opts: PlanOptions,
 ): Promise<Plan> {
 	const files: Record<string, FileState> = { ...state.files };
+	// A state written before tombstones existed has no `ignored` field.
+	const ignored: Record<string, string> = { ...((state as Partial<SyncState>).ignored ?? {}) };
 	const actions: Action[] = [];
 	const conflictsDir = opts.conflictsDir ?? `${trimSlashes(opts.root)}/_conflicts`;
 	// The UTC date of the ISO serverTime names conflict copies: no local clock.
@@ -172,11 +183,18 @@ export async function planPage(
 		}
 
 		if (entry.kind === 'oversize') {
+			// No point fetching a save the user deleted unless the file is back.
+			if (ignored[uuid] !== undefined && resolveLocal(uuid, undefined, local) === undefined) {
+				actions.push({ kind: 'skip', uuid, reason: 'user-deleted' });
+				continue;
+			}
 			actions.push({ kind: 'fetch', uuid, seq: entry.seq });
 			continue;
 		}
 
 		if (entry.kind === 'delete') {
+			// The server agrees the save is gone; the tombstone has done its job.
+			delete ignored[uuid];
 			if (existing === undefined) continue;
 			delete files[uuid];
 			const found = resolveLocal(uuid, existing.path, local);
@@ -190,15 +208,27 @@ export async function planPage(
 			continue;
 		}
 
+		const found = resolveLocal(uuid, existing?.path, local);
+
+		if (ignored[uuid] !== undefined) {
+			if (found === undefined) {
+				actions.push({ kind: 'skip', uuid, reason: 'user-deleted' });
+				continue;
+			}
+			// The file is back on disk (restored from trash, say). Forget the
+			// tombstone and adopt it like any untracked file with a uuid.
+			delete ignored[uuid];
+		}
+
 		const { folder, title, markdown } = entry.file;
 		const incomingFull = await fullHash(markdown);
 		const incomingBody = await bodyHash(markdown);
-		const found = resolveLocal(uuid, existing?.path, local);
 
 		if (found === undefined) {
 			if (existing !== undefined) {
 				actions.push({ kind: 'skip', uuid, reason: 'user-deleted' });
 				delete files[uuid];
+				ignored[uuid] = entry.seq;
 				continue;
 			}
 			const path = buildPath(opts.root, folder, title, uuid, taken);
@@ -255,6 +285,7 @@ export async function planPage(
 			cursor: page.nextCursor,
 			lastReconcileServerTime: state.lastReconcileServerTime,
 			files,
+			ignored,
 		},
 	};
 }
