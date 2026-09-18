@@ -1,6 +1,6 @@
 # Saive Sync for Obsidian
 
-Sync your [Saive](https://saive.my/?utm_source=obsidian-plugin) library into your Obsidian vault. Built and maintained by Dan Seaman.
+Sync your [Saive](https://saive.my/?utm_source=obsidian-plugin) library into your Obsidian vault.
 
 Saive saves the articles, videos, recipes and papers you find on the web as Markdown files, with a summary, tags and your highlights. This plugin copies those files into a folder in your vault and keeps them current, so your saves show up in search, backlinks and the graph next to your own notes.
 
