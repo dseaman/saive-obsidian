@@ -41,7 +41,7 @@ function walk(root: string): string[] {
 }
 
 describe('src/core stays pure', () => {
-	it('has the ten shipped modules', () => {
+	it('has the eleven shipped modules', () => {
 		expect(shipped.sort()).toEqual([
 			'client.ts',
 			'contract.ts',
@@ -53,6 +53,7 @@ describe('src/core stays pure', () => {
 			'link.ts',
 			'plan.ts',
 			'ports.ts',
+			'relative-time.ts',
 		]);
 	});
 
