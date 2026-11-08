@@ -1,6 +1,6 @@
 {
 	"name": "saive-obsidian",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"description": "Sync your Saive.my library into your vault as Markdown notes.",
 	"private": true,
 	"main": "main.js",
