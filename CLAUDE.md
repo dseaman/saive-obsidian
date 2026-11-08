@@ -7,7 +7,7 @@ The Saive server lives in a separate private monorepo (`dseaman/saive`, checked 
 ## Non-negotiable rules
 
 1. **Read-only client.** Saive's storage is the source of truth. Every request is a GET through Obsidian's `requestUrl`. No POST, PUT, PATCH or DELETE, and no `fetch` (it fails CORS).
-2. **The token never touches `data.json`.** The `sv_obs_` secret lives in `app.secretStorage`. Users commit `.obsidian/` to public git, and the token reads a whole private library. `minAppVersion` stays at 1.11.4 or later for that reason.
+2. **The token never touches `data.json`.** The `sv_obs_` secret lives in `app.secretStorage`. Users commit `.obsidian/` to public git, and the token reads a whole private library. `minAppVersion` stays at 1.11.4 or later for that reason; it is 1.13.0 today for the declarative settings tab.
 3. **Byte-faithful files.** Write the `markdown` field from the server as-is. No trimming, no line-ending changes, no frontmatter rewrites.
 4. **The contract is frozen upstream.** `contracts/obsidian-sync-v1.json` is a copy of `docs/contracts/obsidian-sync-v1.json` in the Saive monorepo. Change it there first, bump `version`, then copy it here. Never edit the copy alone.
 5. **No Node or Electron APIs in `src/`** outside test files. The plugin runs on iOS and Android.

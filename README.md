@@ -30,7 +30,7 @@ Obsidian's developer policies ask every plugin to state these in plain view.
 2. Search for **Saive Sync**, then install and enable it.
 3. In the plugin's settings, choose **Connect account**.
 
-Requires Obsidian 1.11.4 or later, on desktop or mobile.
+Requires Obsidian 1.13.0 or later, on desktop or mobile.
 
 ### Beta builds
 
