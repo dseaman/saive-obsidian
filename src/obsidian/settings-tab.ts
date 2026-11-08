@@ -2,9 +2,10 @@
 // plugin supports Obsidian 1.11.4, which predates the declarative settings
 // API. No sync logic here: every button calls back into the plugin.
 
-import { moment, normalizePath, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { getLanguage, normalizePath, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { App } from 'obsidian';
 import { DOCS_URL, PRIVACY_URL, SIGNUP_URL } from '../core/link';
+import { relativeTime } from '../core/relative-time';
 import type SaivePlugin from '../main';
 import { AUTO_SYNC_OPTIONS, autoSyncFrom, autoSyncLabel, cleanRoot, rootProblem } from '../settings';
 
@@ -150,7 +151,7 @@ export class SaiveSettingTab extends PluginSettingTab {
 			return;
 		}
 		const notes = last.tracked === 1 ? '1 note' : `${last.tracked} notes`;
-		status.setDesc(`${moment(last.at).fromNow()} · ${notes}`);
+		status.setDesc(`${relativeTime(last.at, Date.now(), getLanguage())} · ${notes}`);
 	}
 
 	// Registered with the plugin so unload clears it even if hide() never
