@@ -4,8 +4,6 @@ Sync your [Saive](https://saive.my/?utm_source=obsidian-plugin) library into you
 
 Saive saves the articles, videos, recipes and papers you find on the web as Markdown files, with a summary, tags and your highlights. This plugin copies those files into a folder in your vault and keeps them current, so your saves show up in search, backlinks and the graph next to your own notes.
 
-> **Status: pre-release.** Version 0.0.1 proves the build and release pipeline and does nothing else. Sync and the account link are on `main` and ship in the next release. The plugin is absent from the community directory until then.
-
 ## How syncing works
 
 - **Connect once.** Choose **Connect account** in the plugin's settings. The plugin generates a secret token, keeps it in Obsidian's secret storage, and opens a Saive page in your browser that carries a hash of the token and your vault's name. Obsidian and the page both show a six-character code derived from that hash; approve on the page when the two match. The page never sees the token and the plugin never sees your password.
@@ -26,12 +24,17 @@ Obsidian's developer policies ask every plugin to state these in plain view.
 - **Closed-source service.** This plugin is open source under the MIT license. The Saive service it connects to is a hosted, closed-source product.
 - **Payments.** The plugin is free. Saive has a free tier.
 
-## Install the pre-release
+## Install
 
-1. Install the [BRAT](https://obsidian.md/plugins?id=obsidian42-brat) plugin.
-2. In BRAT, choose **Add beta plugin** and enter `dseaman/saive-obsidian`.
+1. In Obsidian, open **Settings → Community plugins** and choose **Browse**.
+2. Search for **Saive Sync**, then install and enable it.
+3. In the plugin's settings, choose **Connect account**.
 
-Requires Obsidian 1.11.4 or later.
+Requires Obsidian 1.11.4 or later, on desktop or mobile.
+
+### Beta builds
+
+To try a release before the community directory lists it, install the [BRAT](https://obsidian.md/plugins?id=obsidian42-brat) plugin. In BRAT, choose **Add beta plugin** and enter `dseaman/saive-obsidian`.
 
 ## Development
 
