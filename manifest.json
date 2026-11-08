@@ -5,6 +5,6 @@
 	"minAppVersion": "1.11.4",
 	"description": "Sync your Saive library into your vault as Markdown notes. Requires a Saive account.",
 	"author": "Dan Seaman",
-	"authorUrl": "https://github.com/dseaman/saive-obsidian",
+	"authorUrl": "https://github.com/dseaman",
 	"isDesktopOnly": false
 }
