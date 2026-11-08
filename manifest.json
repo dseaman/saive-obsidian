@@ -3,7 +3,7 @@
 	"name": "Saive Sync",
 	"version": "0.0.3",
 	"minAppVersion": "1.11.4",
-	"description": "Sync your Saive library into your vault as Markdown notes. Requires a Saive account.",
+	"description": "Sync your Saive.my library into your vault as Markdown notes. Requires a Saive.my account.",
 	"author": "Dan Seaman",
 	"authorUrl": "https://github.com/dseaman",
 	"isDesktopOnly": false
